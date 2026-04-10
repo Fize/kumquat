@@ -1,0 +1,13 @@
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1alpha1.cluster.kumquat.io
+spec:
+  group: cluster.kumquat.io
+  groupPriorityMinimum: 1000
+  service:
+    name: engine-manager-webhook-service
+    namespace: kumquat-system
+  version: v1alpha1
+  versionPriority: 10

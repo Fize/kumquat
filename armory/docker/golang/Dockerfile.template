@@ -1,0 +1,5 @@
+FROM {{REPO}}/alpine:{{ALPINE_VERSION}}
+
+ENV GO_VERSION={{GO_VERSION}}-r0
+
+RUN apk update && apk add --no-cache go==${GO_VERSION}

@@ -1,0 +1,5 @@
+FROM {{REPO}}/alpine:{{ALPINE_VERSION}}
+
+ENV NODE_VERSION={{NODE_VERSION}}-r1
+
+RUN apk update && apk add --no-cache nodejs==${NODE_VERSION} npm==${NODE_VERSION}
