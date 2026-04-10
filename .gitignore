@@ -1,0 +1,23 @@
+# Build artifacts
+.build/
+bin/
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+*.test
+*.out
+vendor/
+
+# Helm
+**/charts/*/charts/
+**/charts/*/requirements.lock
