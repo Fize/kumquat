@@ -1,0 +1,18 @@
+# TAGS {{VERSION}} latest
+FROM {{REPO}}/alpine:{{ALPINE_VERSION}}
+
+ENV PYTHON_VERSION={{VERSION}}
+
+RUN apk update && apk add --no-cache \
+    python3==${PYTHON_VERSION} \
+    py3-pip \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
+    && pip3 install --no-cache-dir --upgrade pip setuptools wheel
+
+# Common Python tools for DevOps
+RUN pip3 install --no-cache-dir \
+    requests \
+    pyyaml \
+    jinja2 \
+    click \
+    rich

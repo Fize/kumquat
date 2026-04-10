@@ -13,35 +13,97 @@ docker/
 │   └── init.sh
 ├── golang/           Go on Alpine
 │   └── Dockerfile.template
-└── node/             Node.js on Alpine
+├── node/             Node.js on Alpine
+│   └── Dockerfile.template
+├── python/           Python on Alpine
+│   └── Dockerfile.template
+├── kubectl/          DevOps tools: kubectl, helm, kustomize
+│   └── Dockerfile.template
+├── builder/          Build tools: gcc, make, cmake, etc.
+│   └── Dockerfile.template
+├── dind/             Docker-in-Docker for CI/CD
+│   ├── Dockerfile.template
+│   └── entrypoint.sh
+├── rust/             Rust on Alpine
+│   └── Dockerfile.template
+└── java/             OpenJDK on Alpine
     └── Dockerfile.template
 ```
 
 ## Quick Start
 
 ```bash
-# Build all (default versions: alpine 3.21.3, go 1.24.4, node 22.15.0)
+# Build all images with default versions
 make all
 
-# Build individual with custom version
-make alpine VERSION=3.20.5
-make golang GO_VERSION=1.23.6 ALPINE_VERSION=3.21.3
-make node NODE_VERSION=20.18.0
+# Build individual images
+make alpine
+make golang
+make node
+make python
+make kubectl
+make builder
+make dind
+make rust
+make java
+
+# Build with custom versions
+make alpine ALPINE_VERSION=3.20.5
+make golang GO_VERSION=1.23.6
+make kubectl KUBECTL_VERSION=1.30.0 HELM_VERSION=3.15.0
 
 # Push to registry
 REPO=yourrepo make push-all
 
-# Or use bootstrap.sh for incremental build (based on git diff)
-./bootstrap.sh --push=true
+# List available images
+make list
 ```
 
 ## Images
 
+### Base Image
+
 | Image | Base | Features |
 |-------|------|----------|
 | `alpine` | Alpine Linux | bash, curl, jq, tini (PID 1), USTC mirror auto-switch |
+
+### Language Runtimes
+
+| Image | Base | Features |
+|-------|------|----------|
 | `golang` | armory/alpine | Go toolchain |
 | `node` | armory/alpine | Node.js + npm |
+| `python` | armory/alpine | Python 3 + pip, requests, pyyaml, jinja2 |
+| `rust` | armory/alpine | Rust + cargo, cargo-audit, cargo-watch |
+| `java` | armory/alpine | OpenJDK + Maven + Gradle |
+
+### DevOps Tools
+
+| Image | Base | Features |
+|-------|------|----------|
+| `kubectl` | armory/alpine | kubectl, helm, kustomize, yq, bash completion |
+| `dind` | armory/alpine | Docker-in-Docker, buildx, compose |
+
+### Build Tools
+
+| Image | Base | Features |
+|-------|------|----------|
+| `builder` | armory/alpine | gcc, g++, make, cmake, autoconf, openssl-dev, etc. |
+
+## Default Versions
+
+| Image | Version |
+|-------|---------|
+| Alpine | 3.21.3 |
+| Go | 1.24.4 |
+| Node.js | 22.15.0 |
+| Python | 3.12.10 |
+| kubectl | 1.32.0 |
+| Helm | 3.17.0 |
+| Kustomize | 5.6.0 |
+| Docker (DinD) | 27.5.1 |
+| Rust | 1.85.0 |
+| OpenJDK | 21 |
 
 ## Design Choices
 

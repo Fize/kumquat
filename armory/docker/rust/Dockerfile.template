@@ -1,0 +1,28 @@
+# TAGS {{VERSION}} latest
+FROM {{REPO}}/alpine:{{ALPINE_VERSION}}
+
+ENV RUST_VERSION={{VERSION}}
+
+# Install Rust dependencies
+RUN apk add --no-cache \
+    curl \
+    gcc \
+    g++ \
+    make \
+    musl-dev \
+    openssl-dev \
+    pkgconfig
+
+# Install Rust using rustup
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${RUST_VERSION}
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install common Rust tools
+RUN cargo install --locked \
+    cargo-audit \
+    cargo-outdated \
+    cargo-watch \
+    rustfmt \
+    clippy
+
+WORKDIR /app

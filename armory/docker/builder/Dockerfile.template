@@ -1,0 +1,38 @@
+# TAGS latest
+# Builder image for multi-stage builds with common compilation tools
+FROM {{REPO}}/alpine:{{ALPINE_VERSION}}
+
+# Install build essentials
+RUN apk update && apk add --no-cache \
+    build-base \
+    gcc \
+    g++ \
+    make \
+    cmake \
+    autoconf \
+    automake \
+    libtool \
+    pkgconfig \
+    git \
+    curl \
+    wget \
+    patch \
+    flex \
+    bison \
+    perl \
+    python3 \
+    py3-pip
+
+# Install common library headers
+RUN apk add --no-cache \
+    openssl-dev \
+    zlib-dev \
+    libffi-dev \
+    sqlite-dev \
+    postgresql-dev \
+    mariadb-connector-c-dev \
+    libuv-dev \
+    libevent-dev \
+    boost-dev
+
+WORKDIR /build

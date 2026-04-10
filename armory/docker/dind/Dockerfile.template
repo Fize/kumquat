@@ -1,0 +1,44 @@
+# TAGS {{DOCKER_VERSION}} latest
+# Docker-in-Docker (DinD) image for CI/CD pipelines
+FROM {{REPO}}/alpine:{{ALPINE_VERSION}}
+
+ENV DOCKER_VERSION={{DOCKER_VERSION}}
+ENV DOCKER_TLS_CERTDIR=/certs
+
+# Install Docker
+RUN apk update && apk add --no-cache \
+    docker \
+    docker-cli \
+    docker-cli-buildx \
+    docker-cli-compose \
+    openrc \
+    git \
+    curl \
+    make
+
+# Install docker-buildx plugin
+RUN mkdir -p ~/.docker/cli-plugins && \
+    ARCH=$(uname -m) && \
+    case $ARCH in \
+        x86_64) ARCH=amd64 ;; \
+        aarch64) ARCH=arm64 ;; \
+    esac && \
+    curl -fsSL "https://github.com/docker/buildx/releases/download/v${BUILDX_VERSION}/buildx-v${BUILDX_VERSION}.linux-${ARCH}" \
+    -o ~/.docker/cli-plugins/docker-buildx && \
+    chmod +x ~/.docker/cli-plugins/docker-buildx
+
+# Create docker cert directory
+RUN mkdir -p ${DOCKER_TLS_CERTDIR}
+
+# Add entrypoint script
+COPY entrypoint.sh /usr/local/bin/entrypoint
+RUN chmod +x /usr/local/bin/entrypoint
+
+# Configure docker daemon
+RUN mkdir -p /etc/docker && \
+    echo '{"storage-driver": "overlay2", "log-driver": "json-file", "log-opts": {"max-size": "10m", "max-file": "3"}}' > /etc/docker/daemon.json
+
+VOLUME [ "/var/lib/docker", "/certs" ]
+
+ENTRYPOINT ["entrypoint"]
+CMD ["dockerd"]
