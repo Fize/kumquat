@@ -24,3 +24,8 @@ vendor/
 # Helm
 **/charts/*/charts/
 **/charts/*/requirements.lock
+
+# Portal
+portal/server
+portal/*.db
+portal/build/
