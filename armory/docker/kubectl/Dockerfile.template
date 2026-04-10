@@ -1,0 +1,54 @@
+# TAGS {{KUBECTL_VERSION}} latest
+FROM {{REPO}}/alpine:{{ALPINE_VERSION}}
+
+ENV KUBECTL_VERSION={{KUBECTL_VERSION}}
+ENV HELM_VERSION={{HELM_VERSION}}
+ENV KUSTOMIZE_VERSION={{KUSTOMIZE_VERSION}}
+
+# Install kubectl
+RUN ARCH=$(uname -m) && \
+    case $ARCH in \
+        x86_64) ARCH=amd64 ;; \
+        aarch64) ARCH=arm64 ;; \
+    esac && \
+    curl -fsSL "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/${ARCH}/kubectl" \
+    -o /usr/local/bin/kubectl && \
+    chmod +x /usr/local/bin/kubectl
+
+# Install helm
+RUN ARCH=$(uname -m) && \
+    case $ARCH in \
+        x86_64) ARCH=amd64 ;; \
+        aarch64) ARCH=arm64 ;; \
+    esac && \
+    curl -fsSL "https://get.helm.sh/helm-v${HELM_VERSION}-linux-${ARCH}.tar.gz" \
+    -o /tmp/helm.tar.gz && \
+    tar -xzf /tmp/helm.tar.gz -C /tmp && \
+    mv /tmp/linux-${ARCH}/helm /usr/local/bin/helm && \
+    rm -rf /tmp/helm.tar.gz /tmp/linux-${ARCH}
+
+# Install kustomize
+RUN ARCH=$(uname -m) && \
+    case $ARCH in \
+        x86_64) ARCH=amd64 ;; \
+        aarch64) ARCH=arm64 ;; \
+    esac && \
+    curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_${ARCH}.tar.gz" \
+    -o /tmp/kustomize.tar.gz && \
+    tar -xzf /tmp/kustomize.tar.gz -C /tmp && \
+    mv /tmp/kustomize /usr/local/bin/kustomize && \
+    rm -rf /tmp/kustomize.tar.gz
+
+# Install additional useful tools
+RUN apk add --no-cache \
+    git \
+    jq \
+    yq \
+    bash-completion
+
+# Enable kubectl completion
+RUN echo 'source <(kubectl completion bash)' >> /etc/bash/bashrc && \
+    echo 'alias k=kubectl' >> /etc/bash/bashrc && \
+    echo 'complete -o default -F __start_kubectl k' >> /etc/bash/bashrc
+
+WORKDIR /workspace
