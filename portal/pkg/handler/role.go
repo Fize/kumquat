@@ -3,6 +3,7 @@ package handler
 import (
 	"strconv"
 
+	"github.com/fize/go-ext/log"
 	"github.com/fize/kumquat/portal/pkg/middleware"
 	"github.com/fize/kumquat/portal/pkg/service"
 	"github.com/fize/kumquat/portal/pkg/utils"
@@ -19,8 +20,8 @@ func NewRoleHandler(roleService *service.RoleService) *RoleHandler {
 	return &RoleHandler{roleService: roleService}
 }
 
-// Register 注册路由
-func (h *RoleHandler) Register(api *gin.RouterGroup) {
+// SetupRoutes 注册路由
+func (h *RoleHandler) SetupRoutes(api *gin.RouterGroup) {
 	roles := api.Group("/roles")
 	roles.Use(middleware.Auth(), middleware.RequireRole("admin"))
 	{
@@ -33,6 +34,7 @@ func (h *RoleHandler) Register(api *gin.RouterGroup) {
 func (h *RoleHandler) List(c *gin.Context) {
 	roles, err := h.roleService.List()
 	if err != nil {
+		log.ErrorContext(c.Request.Context(), "list roles failed", "err", err)
 		utils.InternalError(c, err.Error())
 		return
 	}
@@ -51,6 +53,7 @@ func (h *RoleHandler) Get(c *gin.Context) {
 	}
 	role, err := h.roleService.GetByID(uint(id))
 	if err != nil {
+		log.WarnContext(c.Request.Context(), "get role failed", "id", id, "err", err)
 		utils.NotFound(c, "role not found")
 		return
 	}
@@ -65,7 +68,8 @@ func (h *RoleHandler) GetPermissions(c *gin.Context) {
 	}
 	perms, err := h.roleService.GetPermissions(uint(id))
 	if err != nil {
-		utils.BadRequest(c, err.Error())
+		log.WarnContext(c.Request.Context(), "get role permissions failed", "id", id, "err", err)
+		utils.NotFound(c, err.Error())
 		return
 	}
 	utils.Success(c, gin.H{"permissions": perms})

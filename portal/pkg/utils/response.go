@@ -63,6 +63,11 @@ func NotFound(c *gin.Context, message string) {
 	Error(c, 404, 404, message)
 }
 
+// Conflict 409
+func Conflict(c *gin.Context, message string) {
+	Error(c, 409, 409, message)
+}
+
 // InternalError 500
 func InternalError(c *gin.Context, message string) {
 	if message == "" {
@@ -74,4 +79,33 @@ func InternalError(c *gin.Context, message string) {
 // PageSuccess 分页成功响应
 func PageSuccess(c *gin.Context, total int64, page, size int, list interface{}) {
 	Success(c, PageResult{Total: total, Page: page, Size: size, List: list})
+}
+
+// ErrorFromMessage 根据错误消息自动选择合适的 HTTP 状态码
+func ErrorFromMessage(c *gin.Context, msg string) {
+	switch {
+	case containsAny(msg, "not found"):
+		NotFound(c, msg)
+	case containsAny(msg, "already exists"):
+		Conflict(c, msg)
+	case containsAny(msg, "cannot delete", "insufficient", "not allowed"):
+		Forbidden(c, msg)
+	case containsAny(msg, "invalid", "incorrect", "required"):
+		BadRequest(c, msg)
+	default:
+		BadRequest(c, msg)
+	}
+}
+
+func containsAny(s string, keywords ...string) bool {
+	for _, k := range keywords {
+		if len(s) >= len(k) {
+			for i := 0; i <= len(s)-len(k); i++ {
+				if s[i:i+len(k)] == k {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
