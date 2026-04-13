@@ -60,47 +60,50 @@ func (s *RoleService) GetPermissions(ctx context.Context, roleID uint) ([]model.
 	return perms, nil
 }
 
-// InitRoles 初始化预定义角色和权限
+// InitRoles 初始化预定义角色和权限（使用事务）
 func (s *RoleService) InitRoles() error {
 	ctx := context.Background()
-	for roleName, permissions := range model.PredefinedPermissions {
-		role, err := s.repo.GetByName(ctx, roleName)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				role = &model.Role{Name: roleName}
-				if err := s.repo.Create(ctx, role); err != nil {
-					log.Error("init roles failed: create role error", "err", err, "role", roleName)
-					return apperr.WrapCode(apperr.CodeInternal, err)
-				}
-				log.Info("role created", "role_id", role.ID, "role", roleName)
-			} else {
-				log.Error("init roles failed: query role error", "err", err, "role", roleName)
-				return apperr.WrapCode(apperr.CodeInternal, err)
-			}
-		}
 
-		// 初始化权限：仅当角色无权限记录时才写入预定义权限
-		count, err := s.repo.CountPermissionsByRoleID(ctx, role.ID)
-		if err != nil {
-			return apperr.WrapCode(apperr.CodeInternal, err)
-		}
-		if count == 0 {
-			for _, p := range permissions {
-				perm := model.Permission{
-					RoleID:   role.ID,
-					Resource: p.Resource,
-					Action:   p.Action,
-					Effect:   p.Effect,
-				}
-				if err := s.repo.CreatePermission(ctx, &perm); err != nil {
-					log.Error("init permissions failed", "err", err, "role", roleName, "resource", p.Resource, "action", p.Action)
-					return apperr.WrapCode(apperr.CodeInternal, err)
+	return repository.WithTransaction(s.db, ctx, func(tx *gorm.DB) error {
+		for roleName, permissions := range model.PredefinedPermissions {
+			var role model.Role
+			if err := tx.Where("name = ?", roleName).First(&role).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					role = model.Role{Name: roleName}
+					if err := tx.Create(&role).Error; err != nil {
+						log.Error("init roles failed: create role error", "err", err, "role", roleName)
+						return err
+					}
+					log.Info("role created", "role_id", role.ID, "role", roleName)
+				} else {
+					log.Error("init roles failed: query role error", "err", err, "role", roleName)
+					return err
 				}
 			}
-			log.Info("role permissions initialized", "role", roleName, "count", len(permissions))
+
+			// 初始化权限：仅当角色无权限记录时才写入预定义权限
+			var count int64
+			if err := tx.Model(&model.Permission{}).Where("role_id = ?", role.ID).Count(&count).Error; err != nil {
+				return err
+			}
+			if count == 0 {
+				for _, p := range permissions {
+					perm := model.Permission{
+						RoleID:   role.ID,
+						Resource: p.Resource,
+						Action:   p.Action,
+						Effect:   p.Effect,
+					}
+					if err := tx.Create(&perm).Error; err != nil {
+						log.Error("init permissions failed", "err", err, "role", roleName, "resource", p.Resource, "action", p.Action)
+						return err
+					}
+				}
+				log.Info("role permissions initialized", "role", roleName, "count", len(permissions))
+			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 // CheckPermission 检查角色权限
