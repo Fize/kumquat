@@ -25,12 +25,11 @@
 
 ### 4. 配置优化
 - [ ] 支持环境变量 ${VAR} 形式配置
-- [ ] 添加 casbin_model_path 配置项
 - [ ] 分离 config.yaml 为多个环境配置
 
 ### 5. 链路追踪
-- [ ] 中间件添加 X-Trace-ID 支持
-- [ ] 日志携带 trace_id 字段
+- [ ] 中间件添加 X-Trace-ID 支持（注：go-ext ginserver 已自动注册 TraceID 中间件）
+- [ ] 日志携带 trace_id 字段（注：ginserver 自动处理）
 - [ ] 集成 OpenTelemetry（可选）
 
 ### 6. API 文档
@@ -62,19 +61,27 @@
 - [x] 使用 go-ext 框架（config, ginserver, storage, log）
 - [x] 分层架构（handler/service/model）
 - [x] JWT 认证
-- [x] Casbin RBAC 权限
+- [x] 自定义 ACL 权限（Permission 表替代 Casbin）
 - [x] 树形模块管理
 - [x] 统一响应格式
 
-## 架构优化 - Casbin 与 Role 关联
+## ACL 权限扩展说明
 
-### 问题
-- Casbin 策略表(casbin_rule)和 roles 表通过字符串 name 关联，无外键约束
-- 修改 Role.Name 时不会同步更新 Casbin 策略
-- 缺少级联处理，可能导致权限孤立
+### 当前设计（阶段1）
+- Role → Permission（一对多，通过 role_id 外键关联）
+- Permission 表字段：id, role_id(FK), resource, action, effect
+- 预定义角色权限：
+  - admin → (*, *, allow)
+  - member → (module, read), (project, *), (user, read), (role, read)
+  - guest → (*, read)
+- 粗粒度鉴权：`RequireRole("admin")` 直接比对角色名
+- 细粒度鉴权：`RequirePermission(roleService, "module", "read")` 查 Permission 表
 
-### 改进方案
-- [ ] 方案A: 用 role ID (uint) 替代 name 作为 Casbin subject
-- [ ] 方案B: 移除 Casbin，使用自定义权限表替代
-- [ ] 增加 Role 变更时的级联处理
-- [ ] 添加 Casbin 策略一致性校验启动检查
+### 阶段2 扩展（用户级权限覆盖）
+- 在 Permission 表加 `user_id *uint` 列
+- 用户级权限优先级高于角色级权限
+- 实现：查询时优先查 user_id 匹配的规则，无则查 role_id 规则
+
+### 阶段3 扩展（资源级权限）
+- 在 Permission 表加 `resource_id *string` 列
+- 支持"只能访问模块A下的项目"等细粒度控制

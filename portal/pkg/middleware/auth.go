@@ -3,6 +3,7 @@ package middleware
 import (
 	"strings"
 
+	"github.com/fize/kumquat/portal/pkg/service"
 	"github.com/fize/kumquat/portal/pkg/utils"
 	"github.com/gin-gonic/gin"
 )
@@ -55,6 +56,14 @@ func GetUserID(c *gin.Context) uint {
 	return 0
 }
 
+// GetRoleID 获取角色ID
+func GetRoleID(c *gin.Context) uint {
+	if v, exists := c.Get(ContextKeyRoleID); exists {
+		return v.(uint)
+	}
+	return 0
+}
+
 // GetRoleName 获取角色名
 func GetRoleName(c *gin.Context) string {
 	if v, exists := c.Get(ContextKeyRoleName); exists {
@@ -63,7 +72,7 @@ func GetRoleName(c *gin.Context) string {
 	return ""
 }
 
-// RequireRole 要求特定角色
+// RequireRole 要求特定角色（粗粒度鉴权）
 func RequireRole(roles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		roleName := GetRoleName(c)
@@ -75,5 +84,24 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 		}
 		utils.Forbidden(c, "insufficient permissions")
 		c.Abort()
+	}
+}
+
+// RequirePermission 要求特定权限（细粒度鉴权，基于 Permission 表）
+func RequirePermission(roleService *service.RoleService, resource, action string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		roleID := GetRoleID(c)
+		allowed, err := roleService.CheckPermission(roleID, resource, action)
+		if err != nil {
+			utils.InternalError(c, "permission check failed")
+			c.Abort()
+			return
+		}
+		if !allowed {
+			utils.Forbidden(c, "insufficient permissions")
+			c.Abort()
+			return
+		}
+		c.Next()
 	}
 }

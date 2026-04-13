@@ -14,11 +14,12 @@ import (
 // ProjectHandler 项目处理器
 type ProjectHandler struct {
 	projectService *service.ProjectService
+	roleService    *service.RoleService
 }
 
 // NewProjectHandler 创建项目处理器
-func NewProjectHandler(projectService *service.ProjectService) *ProjectHandler {
-	return &ProjectHandler{projectService: projectService}
+func NewProjectHandler(projectService *service.ProjectService, roleService *service.RoleService) *ProjectHandler {
+	return &ProjectHandler{projectService: projectService, roleService: roleService}
 }
 
 // SetupRoutes 注册路由
@@ -26,9 +27,9 @@ func (h *ProjectHandler) SetupRoutes(api *gin.RouterGroup) {
 	projects := api.Group("/projects")
 	projects.Use(middleware.Auth())
 	{
-		projects.GET("", h.List)
-		projects.GET("/:id", h.Get)
-		projects.GET("/module/:moduleId", h.ListByModule)
+		projects.GET("", middleware.RequirePermission(h.roleService, "project", "read"), h.List)
+		projects.GET("/:id", middleware.RequirePermission(h.roleService, "project", "read"), h.Get)
+		projects.GET("/module/:moduleId", middleware.RequirePermission(h.roleService, "project", "read"), h.ListByModule)
 		projects.POST("", middleware.RequireRole("admin"), h.Create)
 		projects.PUT("/:id", middleware.RequireRole("admin"), h.Update)
 		projects.DELETE("/:id", middleware.RequireRole("admin"), h.Delete)
@@ -87,8 +88,8 @@ func (h *ProjectHandler) ListByModule(c *gin.Context) {
 
 func (h *ProjectHandler) Create(c *gin.Context) {
 	var req struct {
-		Name     string          `json:"name" binding:"required"`
-		ModuleID uint            `json:"module_id" binding:"required"`
+		Name     string           `json:"name" binding:"required"`
+		ModuleID uint             `json:"module_id" binding:"required"`
 		Config   model.JSONConfig `json:"config"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -113,7 +114,7 @@ func (h *ProjectHandler) Update(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name   string          `json:"name"`
+		Name   string           `json:"name"`
 		Config model.JSONConfig `json:"config"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {

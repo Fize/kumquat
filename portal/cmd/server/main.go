@@ -6,9 +6,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/casbin/casbin/v2"
-	"github.com/casbin/casbin/v2/model"
-	gormadapter "github.com/casbin/gorm-adapter/v3"
 	"github.com/fize/go-ext/config"
 	"github.com/fize/go-ext/ginserver"
 	"github.com/fize/go-ext/log"
@@ -44,21 +41,14 @@ func main() {
 	}
 	log.Info("database migrated")
 
-	// 4. 初始化 Casbin
-	enforcer, err := initCasbin(db)
-	if err != nil {
-		log.Fatal("failed to initialize casbin", "err", err)
-	}
-	log.Info("casbin initialized")
-
-	// 5. 初始化预定义角色
-	roleService := service.NewRoleService(db, enforcer)
+	// 4. 初始化预定义角色和权限
+	roleService := service.NewRoleService(db)
 	if err := roleService.InitRoles(); err != nil {
 		log.Fatal("failed to initialize roles", "err", err)
 	}
-	log.Info("roles initialized")
+	log.Info("roles and permissions initialized")
 
-	// 6. 设置 JWT 配置
+	// 5. 设置 JWT 配置
 	utils.JWTSecret = []byte(cfg.JWT.Secret)
 	if cfg.JWT.ExpireDuration != "" {
 		if d, err := time.ParseDuration(cfg.JWT.ExpireDuration); err == nil {
@@ -71,19 +61,19 @@ func main() {
 		}
 	}
 
-	// 7. 创建 HTTP 服务（NewServer 自动注册 TraceID + GinLogger + GinRecovery）
+	// 6. 创建 HTTP 服务（NewServer 自动注册 TraceID + GinLogger + GinRecovery）
 	server, err := ginserver.NewServer(&cfg.BaseConfig)
 	if err != nil {
 		log.Fatal("failed to create server", "err", err)
 	}
 
-	// 8. 额外注册 CORS 中间件
+	// 7. 额外注册 CORS 中间件
 	server.Engine.Use(middleware.CORS())
 
-	// 9. 注册路由
-	registerRoutes(server.Engine, db, enforcer)
+	// 8. 注册路由
+	registerRoutes(server.Engine, db, roleService)
 
-	// 10. 启动服务（带优雅关闭）
+	// 9. 启动服务（带优雅关闭）
 	ctx, cancel, err := server.RunWithContext()
 	if err != nil {
 		log.Fatal("failed to run server", "err", err)
@@ -92,7 +82,7 @@ func main() {
 
 	log.Info("portal server started", "addr", cfg.Server.BindAddr)
 
-	// 11. 等待中断信号
+	// 10. 等待中断信号
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
@@ -157,58 +147,27 @@ func initDB(cfg *PortalConfig) (*gorm.DB, error) {
 	return storage.NewDB(sqlCfg)
 }
 
-// initCasbin 初始化 Casbin
-func initCasbin(db *gorm.DB) (*casbin.Enforcer, error) {
-	adapter, err := gormadapter.NewAdapterByDB(db)
-	if err != nil {
-		return nil, err
-	}
-
-	m, err := model.NewModelFromString(`
-[request_definition]
-r = sub, obj, act
-
-[policy_definition]
-p = sub, obj, act
-
-[role_definition]
-g = _, _
-
-[policy_effect]
-e = some(where (p.eft == allow))
-
-[matchers]
-m = g(r.sub, p.sub) && (r.obj == p.obj || p.obj == '*') && (r.act == p.act || p.act == '*')
-`)
-	if err != nil {
-		return nil, err
-	}
-
-	return casbin.NewEnforcer(m, adapter)
-}
-
 // registerRoutes 注册路由
-func registerRoutes(engine *gin.Engine, db *gorm.DB, enforcer *casbin.Enforcer) {
+func registerRoutes(engine *gin.Engine, db *gorm.DB, roleService *service.RoleService) {
 	api := engine.Group("/api/v1")
 
 	authService := service.NewAuthService(db)
 	userService := service.NewUserService(db)
-	roleService := service.NewRoleService(db, enforcer)
 	moduleService := service.NewModuleService(db)
 	projectService := service.NewProjectService(db)
 
 	authHandler := handler.NewAuthHandler(authService)
 	authHandler.SetupRoutes(api)
 
-	userHandler := handler.NewUserHandler(userService)
+	userHandler := handler.NewUserHandler(userService, roleService)
 	userHandler.SetupRoutes(api)
 
 	roleHandler := handler.NewRoleHandler(roleService)
 	roleHandler.SetupRoutes(api)
 
-	moduleHandler := handler.NewModuleHandler(moduleService)
+	moduleHandler := handler.NewModuleHandler(moduleService, roleService)
 	moduleHandler.SetupRoutes(api)
 
-	projectHandler := handler.NewProjectHandler(projectService)
+	projectHandler := handler.NewProjectHandler(projectService, roleService)
 	projectHandler.SetupRoutes(api)
 }

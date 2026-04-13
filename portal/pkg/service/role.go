@@ -3,28 +3,19 @@ package service
 import (
 	"errors"
 
-	"github.com/casbin/casbin/v2"
 	"github.com/fize/go-ext/log"
 	"github.com/fize/kumquat/portal/pkg/model"
 	"gorm.io/gorm"
 )
 
-// PredefinedRolePermissions 预定义角色权限
-var PredefinedRolePermissions = map[string][]string{
-	model.RoleAdmin:  {"*:*"},
-	model.RoleMember: {"module:*", "project:*"},
-	model.RoleGuest:  {"*:read"},
-}
-
 // RoleService 角色服务
 type RoleService struct {
-	db       *gorm.DB
-	enforcer *casbin.Enforcer
+	db *gorm.DB
 }
 
 // NewRoleService 创建角色服务
-func NewRoleService(db *gorm.DB, enforcer *casbin.Enforcer) *RoleService {
-	return &RoleService{db: db, enforcer: enforcer}
+func NewRoleService(db *gorm.DB) *RoleService {
+	return &RoleService{db: db}
 }
 
 // List 获取角色列表
@@ -47,31 +38,24 @@ func (s *RoleService) GetByID(id uint) (*model.Role, error) {
 }
 
 // GetPermissions 获取角色权限
-func (s *RoleService) GetPermissions(roleID uint) ([]string, error) {
+func (s *RoleService) GetPermissions(roleID uint) ([]model.Permission, error) {
 	role, err := s.GetByID(roleID)
 	if err != nil {
 		log.Warn("get permissions failed: role not found", "role_id", roleID)
 		return nil, errors.New("role not found")
 	}
 
-	policies, err := s.enforcer.GetPermissionsForUser(role.Name)
-	if err != nil {
-		log.Error("get permissions failed: casbin error", "err", err, "role", role.Name)
+	var perms []model.Permission
+	if err := s.db.Where("role_id = ?", role.ID).Find(&perms).Error; err != nil {
+		log.Error("get permissions failed: db error", "err", err, "role_id", role.ID)
 		return nil, err
-	}
-
-	var perms []string
-	for _, p := range policies {
-		if len(p) >= 3 {
-			perms = append(perms, p[1]+":"+p[2])
-		}
 	}
 	return perms, nil
 }
 
-// InitRoles 初始化预定义角色
+// InitRoles 初始化预定义角色和权限
 func (s *RoleService) InitRoles() error {
-	for roleName, perms := range PredefinedRolePermissions {
+	for roleName, permissions := range model.PredefinedPermissions {
 		var role model.Role
 		if err := s.db.Where("name = ?", roleName).First(&role).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -87,27 +71,45 @@ func (s *RoleService) InitRoles() error {
 			}
 		}
 
-		for _, perm := range perms {
-			parts := splitPermission(perm)
-			if len(parts) == 2 {
-				s.enforcer.AddPolicy(roleName, parts[0], parts[1])
+		// 初始化权限：仅当角色无权限记录时才写入预定义权限
+		var count int64
+		s.db.Model(&model.Permission{}).Where("role_id = ?", role.ID).Count(&count)
+		if count == 0 {
+			for _, p := range permissions {
+				perm := model.Permission{
+					RoleID:   role.ID,
+					Resource: p.Resource,
+					Action:   p.Action,
+					Effect:   p.Effect,
+				}
+				if err := s.db.Create(&perm).Error; err != nil {
+					log.Error("init permissions failed", "err", err, "role", roleName, "resource", p.Resource, "action", p.Action)
+					return err
+				}
 			}
+			log.Info("role permissions initialized", "role", roleName, "count", len(permissions))
 		}
-		log.Info("role policies loaded", "role", roleName, "permissions", perms)
 	}
 	return nil
 }
 
-func splitPermission(perm string) []string {
-	for i, c := range perm {
-		if c == ':' {
-			return []string{perm[:i], perm[i+1:]}
+// CheckPermission 检查角色权限
+// 逻辑：查询该角色的所有权限规则，逐条匹配，deny 优先于 allow
+func (s *RoleService) CheckPermission(roleID uint, resource, action string) (bool, error) {
+	var perms []model.Permission
+	if err := s.db.Where("role_id = ?", roleID).Find(&perms).Error; err != nil {
+		log.Error("check permission failed: db error", "err", err, "role_id", roleID)
+		return false, err
+	}
+
+	allowed := false
+	for _, p := range perms {
+		if model.MatchPermission(p.Resource, p.Action, resource, action) {
+			if p.Effect == model.EffectDeny {
+				return false, nil
+			}
+			allowed = true
 		}
 	}
-	return []string{perm}
-}
-
-// CheckPermission 检查角色权限
-func (s *RoleService) CheckPermission(roleName, resource, action string) (bool, error) {
-	return s.enforcer.Enforce(roleName, resource, action)
+	return allowed, nil
 }

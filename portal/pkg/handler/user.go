@@ -13,23 +13,24 @@ import (
 // UserHandler 用户处理器
 type UserHandler struct {
 	userService *service.UserService
+	roleService *service.RoleService
 }
 
 // NewUserHandler 创建用户处理器
-func NewUserHandler(userService *service.UserService) *UserHandler {
-	return &UserHandler{userService: userService}
+func NewUserHandler(userService *service.UserService, roleService *service.RoleService) *UserHandler {
+	return &UserHandler{userService: userService, roleService: roleService}
 }
 
 // SetupRoutes 注册路由
 func (h *UserHandler) SetupRoutes(api *gin.RouterGroup) {
 	users := api.Group("/users")
-	users.Use(middleware.Auth(), middleware.RequireRole("admin"))
+	users.Use(middleware.Auth())
 	{
-		users.GET("", h.List)
-		users.GET("/:id", h.Get)
-		users.POST("", h.Create)
-		users.PUT("/:id", h.Update)
-		users.DELETE("/:id", h.Delete)
+		users.GET("", middleware.RequirePermission(h.roleService, "user", "read"), h.List)
+		users.GET("/:id", middleware.RequirePermission(h.roleService, "user", "read"), h.Get)
+		users.POST("", middleware.RequireRole("admin"), h.Create)
+		users.PUT("/:id", middleware.RequireRole("admin"), h.Update)
+		users.DELETE("/:id", middleware.RequireRole("admin"), h.Delete)
 	}
 }
 

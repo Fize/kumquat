@@ -23,11 +23,11 @@ func NewRoleHandler(roleService *service.RoleService) *RoleHandler {
 // SetupRoutes 注册路由
 func (h *RoleHandler) SetupRoutes(api *gin.RouterGroup) {
 	roles := api.Group("/roles")
-	roles.Use(middleware.Auth(), middleware.RequireRole("admin"))
+	roles.Use(middleware.Auth())
 	{
-		roles.GET("", h.List)
-		roles.GET("/:id", h.Get)
-		roles.GET("/:id/permissions", h.GetPermissions)
+		roles.GET("", middleware.RequirePermission(h.roleService, "role", "read"), h.List)
+		roles.GET("/:id", middleware.RequirePermission(h.roleService, "role", "read"), h.Get)
+		roles.GET("/:id/permissions", middleware.RequirePermission(h.roleService, "role", "read"), h.GetPermissions)
 	}
 }
 
