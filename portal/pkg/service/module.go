@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sort"
 
+	"github.com/fize/go-ext/log"
 	"github.com/fize/kumquat/portal/pkg/model"
 	"gorm.io/gorm"
 )
@@ -22,6 +23,7 @@ func NewModuleService(db *gorm.DB) *ModuleService {
 func (s *ModuleService) List() ([]model.Module, error) {
 	var modules []model.Module
 	if err := s.db.Find(&modules).Error; err != nil {
+		log.Error("list modules failed", "err", err)
 		return nil, err
 	}
 	return s.buildTree(modules), nil
@@ -72,9 +74,11 @@ func (s *ModuleService) Create(name string, parentID *uint, sort int) (*model.Mo
 	if parentID != nil {
 		parent, err := s.GetByID(*parentID)
 		if err != nil {
+			log.Warn("create module failed: parent not found", "parent_id", *parentID)
 			return nil, errors.New("parent module not found")
 		}
 		if parent.Level >= model.MaxModuleLevel {
+			log.Warn("create module failed: parent at max level", "parent_id", *parentID, "level", parent.Level)
 			return nil, errors.New("parent module already at max level")
 		}
 	}
@@ -86,9 +90,11 @@ func (s *ModuleService) Create(name string, parentID *uint, sort int) (*model.Mo
 	}
 
 	if err := s.db.Create(&module).Error; err != nil {
+		log.Error("create module failed: db error", "err", err, "name", name)
 		return nil, err
 	}
 
+	log.Info("module created", "module_id", module.ID, "name", name, "parent_id", parentID)
 	return s.GetByID(module.ID)
 }
 
@@ -96,6 +102,7 @@ func (s *ModuleService) Create(name string, parentID *uint, sort int) (*model.Mo
 func (s *ModuleService) Update(id uint, name string, sort int) (*model.Module, error) {
 	module, err := s.GetByID(id)
 	if err != nil {
+		log.Warn("update module failed: not found", "module_id", id)
 		return nil, errors.New("module not found")
 	}
 
@@ -106,9 +113,11 @@ func (s *ModuleService) Update(id uint, name string, sort int) (*model.Module, e
 	updates["sort"] = sort
 
 	if err := s.db.Model(module).Updates(updates).Error; err != nil {
+		log.Error("update module failed: db error", "err", err, "module_id", id)
 		return nil, err
 	}
 
+	log.Info("module updated", "module_id", id, "name", name)
 	return s.GetByID(id)
 }
 
@@ -116,15 +125,22 @@ func (s *ModuleService) Update(id uint, name string, sort int) (*model.Module, e
 func (s *ModuleService) Delete(id uint) error {
 	module, err := s.GetByID(id)
 	if err != nil {
+		log.Warn("delete module failed: not found", "module_id", id)
 		return errors.New("module not found")
 	}
 
-	// 递归删除子模块
 	if err := s.deleteChildren(id); err != nil {
+		log.Error("delete module failed: delete children error", "err", err, "module_id", id)
 		return err
 	}
 
-	return s.db.Delete(module).Error
+	if err := s.db.Delete(module).Error; err != nil {
+		log.Error("delete module failed: db error", "err", err, "module_id", id)
+		return err
+	}
+
+	log.Info("module deleted", "module_id", id, "name", module.Name)
+	return nil
 }
 
 func (s *ModuleService) deleteChildren(parentID uint) error {

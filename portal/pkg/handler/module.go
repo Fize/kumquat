@@ -3,6 +3,7 @@ package handler
 import (
 	"strconv"
 
+	"github.com/fize/go-ext/log"
 	"github.com/fize/kumquat/portal/pkg/middleware"
 	"github.com/fize/kumquat/portal/pkg/service"
 	"github.com/fize/kumquat/portal/pkg/utils"
@@ -19,8 +20,8 @@ func NewModuleHandler(moduleService *service.ModuleService) *ModuleHandler {
 	return &ModuleHandler{moduleService: moduleService}
 }
 
-// Register 注册路由
-func (h *ModuleHandler) Register(api *gin.RouterGroup) {
+// SetupRoutes 注册路由
+func (h *ModuleHandler) SetupRoutes(api *gin.RouterGroup) {
 	modules := api.Group("/modules")
 	modules.Use(middleware.Auth())
 	{
@@ -36,6 +37,7 @@ func (h *ModuleHandler) Register(api *gin.RouterGroup) {
 func (h *ModuleHandler) List(c *gin.Context) {
 	modules, err := h.moduleService.List()
 	if err != nil {
+		log.ErrorContext(c.Request.Context(), "list modules failed", "err", err)
 		utils.InternalError(c, err.Error())
 		return
 	}
@@ -54,6 +56,7 @@ func (h *ModuleHandler) Get(c *gin.Context) {
 	}
 	module, err := h.moduleService.GetByID(uint(id))
 	if err != nil {
+		log.WarnContext(c.Request.Context(), "get module failed", "id", id, "err", err)
 		utils.NotFound(c, "module not found")
 		return
 	}
@@ -68,6 +71,7 @@ func (h *ModuleHandler) GetChildren(c *gin.Context) {
 	}
 	module, err := h.moduleService.GetByID(uint(id))
 	if err != nil {
+		log.WarnContext(c.Request.Context(), "get module children failed", "id", id, "err", err)
 		utils.NotFound(c, "module not found")
 		return
 	}
@@ -81,14 +85,17 @@ func (h *ModuleHandler) Create(c *gin.Context) {
 		Sort     int    `json:"sort"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.WarnContext(c.Request.Context(), "create module request validation failed", "err", err)
 		utils.BadRequest(c, err.Error())
 		return
 	}
 	module, err := h.moduleService.Create(req.Name, req.ParentID, req.Sort)
 	if err != nil {
-		utils.BadRequest(c, err.Error())
+		log.WarnContext(c.Request.Context(), "create module failed", "name", req.Name, "err", err)
+		utils.Conflict(c, err.Error())
 		return
 	}
+	log.InfoContext(c.Request.Context(), "module created", "module_id", module.ID, "name", module.Name)
 	utils.Success(c, module.ToResponse())
 }
 
@@ -103,14 +110,17 @@ func (h *ModuleHandler) Update(c *gin.Context) {
 		Sort int    `json:"sort"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.WarnContext(c.Request.Context(), "update module request validation failed", "id", id, "err", err)
 		utils.BadRequest(c, err.Error())
 		return
 	}
 	module, err := h.moduleService.Update(uint(id), req.Name, req.Sort)
 	if err != nil {
-		utils.BadRequest(c, err.Error())
+		log.WarnContext(c.Request.Context(), "update module failed", "id", id, "err", err)
+		utils.NotFound(c, err.Error())
 		return
 	}
+	log.InfoContext(c.Request.Context(), "module updated", "module_id", module.ID)
 	utils.Success(c, module.ToResponse())
 }
 
@@ -121,8 +131,10 @@ func (h *ModuleHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.moduleService.Delete(uint(id)); err != nil {
-		utils.BadRequest(c, err.Error())
+		log.WarnContext(c.Request.Context(), "delete module failed", "id", id, "err", err)
+		utils.Conflict(c, err.Error())
 		return
 	}
+	log.InfoContext(c.Request.Context(), "module deleted", "module_id", id)
 	utils.SuccessWithMessage(c, "deleted", nil)
 }

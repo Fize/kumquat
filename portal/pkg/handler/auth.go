@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"github.com/fize/go-ext/log"
 	"github.com/fize/kumquat/portal/pkg/middleware"
 	"github.com/fize/kumquat/portal/pkg/service"
 	"github.com/fize/kumquat/portal/pkg/utils"
@@ -17,12 +18,12 @@ func NewAuthHandler(authService *service.AuthService) *AuthHandler {
 	return &AuthHandler{authService: authService}
 }
 
-// RegisterRoutes 注册路由
-func (h *AuthHandler) RegisterRoutes(api *gin.RouterGroup) {
+// SetupRoutes 注册路由
+func (h *AuthHandler) SetupRoutes(api *gin.RouterGroup) {
 	auth := api.Group("/auth")
 	{
 		auth.POST("/login", h.Login)
-		auth.POST("/register", h.DoRegister)  // 重命名避免冲突
+		auth.POST("/register", h.DoRegister)
 		protected := auth.Group("")
 		protected.Use(middleware.Auth())
 		{
@@ -39,14 +40,17 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		Password string `json:"password" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.WarnContext(c.Request.Context(), "login request validation failed", "err", err)
 		utils.BadRequest(c, err.Error())
 		return
 	}
 	token, user, err := h.authService.Login(req.Username, req.Password)
 	if err != nil {
+		log.WarnContext(c.Request.Context(), "login failed", "username", req.Username, "err", err)
 		utils.Unauthorized(c, err.Error())
 		return
 	}
+	log.InfoContext(c.Request.Context(), "user logged in", "user_id", user.ID, "username", user.Username)
 	utils.Success(c, gin.H{"token": token, "user": user.ToResponse()})
 }
 
@@ -59,14 +63,17 @@ func (h *AuthHandler) DoRegister(c *gin.Context) {
 		Nickname string `json:"nickname"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.WarnContext(c.Request.Context(), "register request validation failed", "err", err)
 		utils.BadRequest(c, err.Error())
 		return
 	}
 	user, err := h.authService.Register(req.Username, req.Email, req.Password, req.Nickname)
 	if err != nil {
-		utils.BadRequest(c, err.Error())
+		log.WarnContext(c.Request.Context(), "register failed", "username", req.Username, "err", err)
+		utils.Conflict(c, err.Error())
 		return
 	}
+	log.InfoContext(c.Request.Context(), "user registered", "user_id", user.ID, "username", user.Username)
 	utils.Success(c, user.ToResponse())
 }
 
@@ -75,6 +82,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	user, err := h.authService.GetUserByID(userID)
 	if err != nil {
+		log.WarnContext(c.Request.Context(), "get current user failed", "user_id", userID, "err", err)
 		utils.NotFound(c, "user not found")
 		return
 	}
@@ -89,12 +97,15 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		NewPassword string `json:"newPassword" binding:"required,min=6,max=32"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.WarnContext(c.Request.Context(), "change password request validation failed", "user_id", userID, "err", err)
 		utils.BadRequest(c, err.Error())
 		return
 	}
 	if err := h.authService.ChangePassword(userID, req.OldPassword, req.NewPassword); err != nil {
-		utils.BadRequest(c, err.Error())
+		log.WarnContext(c.Request.Context(), "change password failed", "user_id", userID, "err", err)
+		utils.Forbidden(c, err.Error())
 		return
 	}
+	log.InfoContext(c.Request.Context(), "password changed", "user_id", userID)
 	utils.SuccessWithMessage(c, "password changed successfully", nil)
 }

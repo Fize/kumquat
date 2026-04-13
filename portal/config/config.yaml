@@ -1,32 +1,28 @@
 server:
-  port: 8080
-  mode: debug  # debug or release
+  bindAddr: ":8080"
+  metrics:
+    enabled: false
+  trace:
+    enabled: false
+
+sql:
+  type: sqlite3
+  host: "./portal.db"
+  user: ""
+  password: ""
+  db: ""
+  maxIdleConns: 10
+  maxOpenConns: 100
+  debug: false
 
 log:
   level: info
   format: json
-  output: stdout
-
-database:
-  driver: sqlite  # mysql or sqlite
-  sqlite:
-    path: ./portal.db
-  mysql:
-    host: localhost
-    port: 3306
-    user: root
-    password: ""
-    database: kumquat_portal
-    charset: utf8mb4
-    max_idle_conns: 10
-    max_open_conns: 100
 
 jwt:
   secret: "change-this-secret-in-production"
-  expire_duration: 24h  # 24 hours
-  reset_expire_duration: 10m  # 10 minutes
+  expire_duration: 24h
+  reset_expire_duration: 10m
 
 security:
-  # 可选：限制注册邮箱后缀
   allowed_email_domains: []
-  # 示例: ["example.com", "company.com"]

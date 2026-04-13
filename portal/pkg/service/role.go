@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/casbin/casbin/v2"
+	"github.com/fize/go-ext/log"
 	"github.com/fize/kumquat/portal/pkg/model"
 	"gorm.io/gorm"
 )
@@ -30,6 +31,7 @@ func NewRoleService(db *gorm.DB, enforcer *casbin.Enforcer) *RoleService {
 func (s *RoleService) List() ([]model.Role, error) {
 	var roles []model.Role
 	if err := s.db.Find(&roles).Error; err != nil {
+		log.Error("list roles failed", "err", err)
 		return nil, err
 	}
 	return roles, nil
@@ -48,11 +50,13 @@ func (s *RoleService) GetByID(id uint) (*model.Role, error) {
 func (s *RoleService) GetPermissions(roleID uint) ([]string, error) {
 	role, err := s.GetByID(roleID)
 	if err != nil {
+		log.Warn("get permissions failed: role not found", "role_id", roleID)
 		return nil, errors.New("role not found")
 	}
 
 	policies, err := s.enforcer.GetPermissionsForUser(role.Name)
 	if err != nil {
+		log.Error("get permissions failed: casbin error", "err", err, "role", role.Name)
 		return nil, err
 	}
 
@@ -73,20 +77,23 @@ func (s *RoleService) InitRoles() error {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				role = model.Role{Name: roleName}
 				if err := s.db.Create(&role).Error; err != nil {
+					log.Error("init roles failed: create role error", "err", err, "role", roleName)
 					return err
 				}
+				log.Info("role created", "role_id", role.ID, "role", roleName)
 			} else {
+				log.Error("init roles failed: query role error", "err", err, "role", roleName)
 				return err
 			}
 		}
 
-		// 添加 Casbin 策略
 		for _, perm := range perms {
 			parts := splitPermission(perm)
 			if len(parts) == 2 {
 				s.enforcer.AddPolicy(roleName, parts[0], parts[1])
 			}
 		}
+		log.Info("role policies loaded", "role", roleName, "permissions", perms)
 	}
 	return nil
 }

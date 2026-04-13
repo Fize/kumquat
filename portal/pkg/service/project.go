@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 
+	"github.com/fize/go-ext/log"
 	"github.com/fize/kumquat/portal/pkg/model"
 	"gorm.io/gorm"
 )
@@ -23,6 +24,7 @@ func (s *ProjectService) List(page, size int) ([]model.Project, int64, error) {
 	var total int64
 
 	if err := s.db.Model(&model.Project{}).Count(&total).Error; err != nil {
+		log.Error("list projects failed: count error", "err", err)
 		return nil, 0, err
 	}
 
@@ -30,6 +32,7 @@ func (s *ProjectService) List(page, size int) ([]model.Project, int64, error) {
 		Offset((page - 1) * size).Limit(size).
 		Order("created_at desc").
 		Find(&projects).Error; err != nil {
+		log.Error("list projects failed: query error", "err", err)
 		return nil, 0, err
 	}
 
@@ -49,6 +52,7 @@ func (s *ProjectService) GetByID(id uint) (*model.Project, error) {
 func (s *ProjectService) Create(name string, moduleID uint, config model.JSONConfig) (*model.Project, error) {
 	var module model.Module
 	if err := s.db.First(&module, moduleID).Error; err != nil {
+		log.Warn("create project failed: module not found", "module_id", moduleID)
 		return nil, errors.New("module not found")
 	}
 
@@ -59,10 +63,12 @@ func (s *ProjectService) Create(name string, moduleID uint, config model.JSONCon
 	}
 
 	if err := s.db.Create(&project).Error; err != nil {
+		log.Error("create project failed: db error", "err", err, "name", name)
 		return nil, err
 	}
 
 	project.Module = module
+	log.Info("project created", "project_id", project.ID, "name", name, "module_id", moduleID)
 	return &project, nil
 }
 
@@ -70,6 +76,7 @@ func (s *ProjectService) Create(name string, moduleID uint, config model.JSONCon
 func (s *ProjectService) Update(id uint, name string, config model.JSONConfig) (*model.Project, error) {
 	project, err := s.GetByID(id)
 	if err != nil {
+		log.Warn("update project failed: not found", "project_id", id)
 		return nil, errors.New("project not found")
 	}
 
@@ -82,9 +89,11 @@ func (s *ProjectService) Update(id uint, name string, config model.JSONConfig) (
 	}
 
 	if err := s.db.Model(project).Updates(updates).Error; err != nil {
+		log.Error("update project failed: db error", "err", err, "project_id", id)
 		return nil, err
 	}
 
+	log.Info("project updated", "project_id", id)
 	return s.GetByID(id)
 }
 
@@ -92,9 +101,17 @@ func (s *ProjectService) Update(id uint, name string, config model.JSONConfig) (
 func (s *ProjectService) Delete(id uint) error {
 	project, err := s.GetByID(id)
 	if err != nil {
+		log.Warn("delete project failed: not found", "project_id", id)
 		return errors.New("project not found")
 	}
-	return s.db.Delete(project).Error
+
+	if err := s.db.Delete(project).Error; err != nil {
+		log.Error("delete project failed: db error", "err", err, "project_id", id)
+		return err
+	}
+
+	log.Info("project deleted", "project_id", id, "name", project.Name)
+	return nil
 }
 
 // ListByModule 根据模块获取项目
@@ -104,12 +121,14 @@ func (s *ProjectService) ListByModule(moduleID uint, page, size int) ([]model.Pr
 
 	query := s.db.Model(&model.Project{}).Where("module_id = ?", moduleID)
 	if err := query.Count(&total).Error; err != nil {
+		log.Error("list projects by module failed: count error", "err", err, "module_id", moduleID)
 		return nil, 0, err
 	}
 
 	if err := query.Preload("Module").
 		Offset((page-1)*size).Limit(size).
 		Find(&projects).Error; err != nil {
+		log.Error("list projects by module failed: query error", "err", err, "module_id", moduleID)
 		return nil, 0, err
 	}
 

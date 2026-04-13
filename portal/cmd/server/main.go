@@ -29,57 +29,61 @@ func main() {
 		log.Fatal("failed to load config", "err", err)
 	}
 
-	// 2. 初始化日志
 	log.Info("starting portal server")
 
-	// 3. 初始化数据库
+	// 2. 初始化数据库
 	db, err := initDB(cfg)
 	if err != nil {
 		log.Fatal("failed to connect database", "err", err)
 	}
-	log.Info("database connected")
+	log.Info("database connected", "type", cfg.SQL.Type, "host", cfg.SQL.Host)
 
-	// 4. 执行数据库迁移
+	// 3. 执行数据库迁移
 	if err := migration.Migrate(db); err != nil {
 		log.Fatal("failed to migrate database", "err", err)
 	}
 	log.Info("database migrated")
 
-	// 5. 初始化 Casbin
+	// 4. 初始化 Casbin
 	enforcer, err := initCasbin(db)
 	if err != nil {
 		log.Fatal("failed to initialize casbin", "err", err)
 	}
 	log.Info("casbin initialized")
 
-	// 6. 初始化预定义角色
+	// 5. 初始化预定义角色
 	roleService := service.NewRoleService(db, enforcer)
 	if err := roleService.InitRoles(); err != nil {
 		log.Fatal("failed to initialize roles", "err", err)
 	}
 	log.Info("roles initialized")
 
-	// 7. 设置 JWT 配置
+	// 6. 设置 JWT 配置
 	utils.JWTSecret = []byte(cfg.JWT.Secret)
 	if cfg.JWT.ExpireDuration != "" {
 		if d, err := time.ParseDuration(cfg.JWT.ExpireDuration); err == nil {
 			utils.TokenExpireDuration = d
 		}
 	}
+	if cfg.JWT.ResetExpireDuration != "" {
+		if d, err := time.ParseDuration(cfg.JWT.ResetExpireDuration); err == nil {
+			utils.ResetTokenExpireDuration = d
+		}
+	}
 
-	// 8. 创建 HTTP 服务
+	// 7. 创建 HTTP 服务（NewServer 自动注册 TraceID + GinLogger + GinRecovery）
 	server, err := ginserver.NewServer(&cfg.BaseConfig)
 	if err != nil {
 		log.Fatal("failed to create server", "err", err)
 	}
 
-	// 9. 注册中间件
-	registerMiddlewares(server.Engine)
+	// 8. 额外注册 CORS 中间件
+	server.Engine.Use(middleware.CORS())
 
-	// 10. 注册路由
+	// 9. 注册路由
 	registerRoutes(server.Engine, db, enforcer)
 
-	// 11. 启动服务（带优雅关闭）
+	// 10. 启动服务（带优雅关闭）
 	ctx, cancel, err := server.RunWithContext()
 	if err != nil {
 		log.Fatal("failed to run server", "err", err)
@@ -88,7 +92,7 @@ func main() {
 
 	log.Info("portal server started", "addr", cfg.Server.BindAddr)
 
-	// 12. 等待中断信号
+	// 11. 等待中断信号
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
@@ -105,7 +109,7 @@ type PortalConfig struct {
 	config.BaseConfig
 	JWT struct {
 		Secret              string `mapstructure:"secret"`
-		ExpireDuration     string `mapstructure:"expire_duration"`
+		ExpireDuration      string `mapstructure:"expire_duration"`
 		ResetExpireDuration string `mapstructure:"reset_expire_duration"`
 	} `mapstructure:"jwt"`
 	Security struct {
@@ -119,18 +123,15 @@ func loadConfig() (*PortalConfig, error) {
 		BaseConfig: *config.NewConfig(),
 	}
 
-	// 设置默认值
 	cfg.Server.BindAddr = ":8080"
 	cfg.JWT.Secret = "change-this-secret-in-production"
 	cfg.JWT.ExpireDuration = "24h"
 	cfg.JWT.ResetExpireDuration = "10m"
 
-	// 加载配置文件
 	if err := cfg.Load("config.yaml", false); err != nil {
 		log.Warn("config file not found, using defaults", "err", err)
 	}
 
-	// 解析自定义配置到结构体
 	if err := cfg.ParseCustomConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -146,6 +147,8 @@ func initDB(cfg *PortalConfig) (*gorm.DB, error) {
 		config.WithUser(cfg.SQL.User),
 		config.WithPassword(cfg.SQL.Password),
 		config.WithDB(cfg.SQL.DB),
+		config.WithMaxIdleConns(cfg.SQL.MaxIdleConns),
+		config.WithMaxOpenConns(cfg.SQL.MaxOpenConns),
 	)
 	if err != nil {
 		return nil, err
@@ -184,37 +187,28 @@ m = g(r.sub, p.sub) && (r.obj == p.obj || p.obj == '*') && (r.act == p.act || p.
 	return casbin.NewEnforcer(m, adapter)
 }
 
-// registerMiddlewares 注册全局中间件
-func registerMiddlewares(engine *gin.Engine) {
-	engine.Use(middleware.Logger())
-	engine.Use(gin.Recovery())
-	engine.Use(middleware.CORS())
-}
-
 // registerRoutes 注册路由
 func registerRoutes(engine *gin.Engine, db *gorm.DB, enforcer *casbin.Enforcer) {
 	api := engine.Group("/api/v1")
 
-	// 初始化服务
 	authService := service.NewAuthService(db)
 	userService := service.NewUserService(db)
 	roleService := service.NewRoleService(db, enforcer)
 	moduleService := service.NewModuleService(db)
 	projectService := service.NewProjectService(db)
 
-	// 注册控制器
 	authHandler := handler.NewAuthHandler(authService)
-	authHandler.RegisterRoutes(api)
+	authHandler.SetupRoutes(api)
 
 	userHandler := handler.NewUserHandler(userService)
-	userHandler.Register(api)
+	userHandler.SetupRoutes(api)
 
 	roleHandler := handler.NewRoleHandler(roleService)
-	roleHandler.Register(api)
+	roleHandler.SetupRoutes(api)
 
 	moduleHandler := handler.NewModuleHandler(moduleService)
-	moduleHandler.Register(api)
+	moduleHandler.SetupRoutes(api)
 
 	projectHandler := handler.NewProjectHandler(projectService)
-	projectHandler.Register(api)
+	projectHandler.SetupRoutes(api)
 }

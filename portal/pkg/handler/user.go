@@ -3,6 +3,7 @@ package handler
 import (
 	"strconv"
 
+	"github.com/fize/go-ext/log"
 	"github.com/fize/kumquat/portal/pkg/middleware"
 	"github.com/fize/kumquat/portal/pkg/service"
 	"github.com/fize/kumquat/portal/pkg/utils"
@@ -19,8 +20,8 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 	return &UserHandler{userService: userService}
 }
 
-// Register 注册路由
-func (h *UserHandler) Register(api *gin.RouterGroup) {
+// SetupRoutes 注册路由
+func (h *UserHandler) SetupRoutes(api *gin.RouterGroup) {
 	users := api.Group("/users")
 	users.Use(middleware.Auth(), middleware.RequireRole("admin"))
 	{
@@ -36,6 +37,7 @@ func (h *UserHandler) List(c *gin.Context) {
 	page, size := utils.GetPageSize(c)
 	users, total, err := h.userService.List(page, size)
 	if err != nil {
+		log.ErrorContext(c.Request.Context(), "list users failed", "err", err)
 		utils.InternalError(c, err.Error())
 		return
 	}
@@ -54,6 +56,7 @@ func (h *UserHandler) Get(c *gin.Context) {
 	}
 	user, err := h.userService.GetByID(uint(id))
 	if err != nil {
+		log.WarnContext(c.Request.Context(), "get user failed", "id", id, "err", err)
 		utils.NotFound(c, "user not found")
 		return
 	}
@@ -70,14 +73,17 @@ func (h *UserHandler) Create(c *gin.Context) {
 		ModuleID *uint  `json:"module_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.WarnContext(c.Request.Context(), "create user request validation failed", "err", err)
 		utils.BadRequest(c, err.Error())
 		return
 	}
 	user, err := h.userService.Create(req.Username, req.Email, req.Password, req.Nickname, req.RoleID, req.ModuleID)
 	if err != nil {
-		utils.BadRequest(c, err.Error())
+		log.WarnContext(c.Request.Context(), "create user failed", "username", req.Username, "err", err)
+		utils.Conflict(c, err.Error())
 		return
 	}
+	log.InfoContext(c.Request.Context(), "user created", "user_id", user.ID, "username", user.Username)
 	utils.Success(c, user.ToResponse())
 }
 
@@ -93,14 +99,17 @@ func (h *UserHandler) Update(c *gin.Context) {
 		ModuleID *uint  `json:"module_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.WarnContext(c.Request.Context(), "update user request validation failed", "id", id, "err", err)
 		utils.BadRequest(c, err.Error())
 		return
 	}
 	user, err := h.userService.Update(uint(id), req.Nickname, req.RoleID, req.ModuleID)
 	if err != nil {
-		utils.BadRequest(c, err.Error())
+		log.WarnContext(c.Request.Context(), "update user failed", "id", id, "err", err)
+		utils.NotFound(c, err.Error())
 		return
 	}
+	log.InfoContext(c.Request.Context(), "user updated", "user_id", user.ID)
 	utils.Success(c, user.ToResponse())
 }
 
@@ -111,8 +120,10 @@ func (h *UserHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.userService.Delete(uint(id)); err != nil {
-		utils.BadRequest(c, err.Error())
+		log.WarnContext(c.Request.Context(), "delete user failed", "id", id, "err", err)
+		utils.Forbidden(c, err.Error())
 		return
 	}
+	log.InfoContext(c.Request.Context(), "user deleted", "user_id", id)
 	utils.SuccessWithMessage(c, "deleted", nil)
 }
