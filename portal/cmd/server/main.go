@@ -52,21 +52,22 @@ func main() {
 	}
 	log.Info("roles and permissions initialized")
 
-	utils.JWTSecret = []byte(cfg.JWT.Secret)
-	if cfg.JWT.ExpireDuration != "" {
-		if d, err := time.ParseDuration(cfg.JWT.ExpireDuration); err == nil {
-			utils.TokenExpireDuration = d
-		}
+	// 初始化 JWT Service
+	expireDuration, err := time.ParseDuration(cfg.JWT.ExpireDuration)
+	if err != nil {
+		expireDuration = 24 * time.Hour
 	}
-	if cfg.JWT.ResetExpireDuration != "" {
-		if d, err := time.ParseDuration(cfg.JWT.ResetExpireDuration); err == nil {
-			utils.ResetTokenExpireDuration = d
-		}
+	resetExpireDuration, err := time.ParseDuration(cfg.JWT.ResetExpireDuration)
+	if err != nil {
+		resetExpireDuration = 10 * time.Minute
 	}
+	jwtService := service.NewJWTService(cfg.JWT.Secret, expireDuration, resetExpireDuration)
+
+	authMiddleware := middleware.NewAuthMiddleware(jwtService)
 
 	server.Engine.Use(middleware.CORS())
 
-	registerRoutes(server.Engine, db, roleService)
+	registerRoutes(server.Engine, db, roleService, jwtService, authMiddleware)
 
 	ctx, cancel, err := server.RunWithContext()
 	if err != nil {
@@ -141,32 +142,32 @@ func initDB(cfg *PortalConfig, logger *log.Logger) (*gorm.DB, error) {
 	)
 }
 
-func registerRoutes(engine *gin.Engine, db *gorm.DB, roleService *service.RoleService) {
+func registerRoutes(engine *gin.Engine, db *gorm.DB, roleService *service.RoleService, jwtService *service.JWTService, authMiddleware *middleware.AuthMiddleware) {
 	api := engine.Group("/api/v1")
 
-	authService := service.NewAuthService(db)
+	authService := service.NewAuthService(db, jwtService)
 	userService := service.NewUserService(db)
 	moduleService := service.NewModuleService(db)
 	projectService := service.NewProjectService(db)
 
-	authHandler := handler.NewAuthController(authService)
+	authHandler := handler.NewAuthController(authService, authMiddleware)
 	authHandler.SetupRoutes(api)
 
 	restful := &ginserver.RestfulAPI{}
 
-	restful.Install(engine, handler.NewUserController(userService, roleService))
-	restful.Install(engine, handler.NewRoleController(roleService))
-	restful.Install(engine, handler.NewModuleController(moduleService, roleService))
-	restful.Install(engine, handler.NewProjectController(projectService, roleService))
+	restful.Install(engine, handler.NewUserController(userService, roleService, authMiddleware))
+	restful.Install(engine, handler.NewRoleController(roleService, authMiddleware))
+	restful.Install(engine, handler.NewModuleController(moduleService, roleService, authMiddleware))
+	restful.Install(engine, handler.NewProjectController(projectService, roleService, authMiddleware))
 
-	registerCustomRoutes(api, db, roleService)
+	registerCustomRoutes(api, db, roleService, authMiddleware)
 }
 
-func registerCustomRoutes(api *gin.RouterGroup, db *gorm.DB, roleService *service.RoleService) {
+func registerCustomRoutes(api *gin.RouterGroup, db *gorm.DB, roleService *service.RoleService, authMiddleware *middleware.AuthMiddleware) {
 	moduleService := service.NewModuleService(db)
 	projectService := service.NewProjectService(db)
 
-	api.GET("/modules/:id/children", middleware.Auth(),
+	api.GET("/modules/:id/children", authMiddleware.Auth(),
 		middleware.RequirePermission(roleService, "module", "read"),
 		func(c *gin.Context) {
 			id, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -183,7 +184,7 @@ func registerCustomRoutes(api *gin.RouterGroup, db *gorm.DB, roleService *servic
 			utils.Success(c, module.Children)
 		})
 
-	api.GET("/projects/module/:moduleId", middleware.Auth(),
+	api.GET("/projects/module/:moduleId", authMiddleware.Auth(),
 		middleware.RequirePermission(roleService, "project", "read"),
 		func(c *gin.Context) {
 			moduleId, err := strconv.ParseUint(c.Param("moduleId"), 10, 32)
@@ -205,7 +206,7 @@ func registerCustomRoutes(api *gin.RouterGroup, db *gorm.DB, roleService *servic
 			utils.PageSuccess(c, total, page, size, list)
 		})
 
-	api.GET("/roles/:id/permissions", middleware.Auth(),
+	api.GET("/roles/:id/permissions", authMiddleware.Auth(),
 		middleware.RequirePermission(roleService, "role", "read"),
 		func(c *gin.Context) {
 			id, err := strconv.ParseUint(c.Param("id"), 10, 32)

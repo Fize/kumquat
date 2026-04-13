@@ -10,12 +10,13 @@ import (
 
 // AuthController 认证控制器（手动路由注册，不使用 RestfulAPI）
 type AuthController struct {
-	authService *service.AuthService
+	authService   *service.AuthService
+	authMiddleware *middleware.AuthMiddleware
 }
 
 // NewAuthController 创建认证控制器
-func NewAuthController(authService *service.AuthService) *AuthController {
-	return &AuthController{authService: authService}
+func NewAuthController(authService *service.AuthService, authMiddleware *middleware.AuthMiddleware) *AuthController {
+	return &AuthController{authService: authService, authMiddleware: authMiddleware}
 }
 
 // SetupRoutes 注册 auth 路由（手动，不走 RestfulAPI）
@@ -25,7 +26,7 @@ func (h *AuthController) SetupRoutes(api *gin.RouterGroup) {
 		auth.POST("/login", h.Login)
 		auth.POST("/register", h.DoRegister)
 		protected := auth.Group("")
-		protected.Use(middleware.Auth())
+		protected.Use(h.authMiddleware.Auth())
 		{
 			protected.GET("/me", h.Me)
 			protected.PUT("/change-password", h.ChangePassword)

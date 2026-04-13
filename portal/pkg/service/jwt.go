@@ -1,16 +1,10 @@
-package utils
+package service
 
 import (
 	"errors"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-)
-
-var (
-	JWTSecret            = []byte("change-this-secret")
-	TokenExpireDuration  = 24 * time.Hour
-	ResetTokenExpireDuration = 10 * time.Minute
 )
 
 // Claims JWT 声明
@@ -22,8 +16,24 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// JWTService JWT 服务
+type JWTService struct {
+	secret              []byte
+	expireDuration      time.Duration
+	resetExpireDuration time.Duration
+}
+
+// NewJWTService 创建 JWT 服务
+func NewJWTService(secret string, expire, resetExpire time.Duration) *JWTService {
+	return &JWTService{
+		secret:              []byte(secret),
+		expireDuration:      expire,
+		resetExpireDuration: resetExpire,
+	}
+}
+
 // GenerateToken 生成 JWT Token
-func GenerateToken(userID uint, username string, roleID uint, roleName string) (string, error) {
+func (s *JWTService) GenerateToken(userID uint, username string, roleID uint, roleName string) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		UserID:   userID,
@@ -31,7 +41,7 @@ func GenerateToken(userID uint, username string, roleID uint, roleName string) (
 		RoleID:   roleID,
 		RoleName: roleName,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(TokenExpireDuration)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(s.expireDuration)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			Issuer:    "kumquat-portal",
@@ -40,16 +50,16 @@ func GenerateToken(userID uint, username string, roleID uint, roleName string) (
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(JWTSecret)
+	return token.SignedString(s.secret)
 }
 
 // ParseToken 解析 JWT Token
-func ParseToken(tokenString string) (*Claims, error) {
+func (s *JWTService) ParseToken(tokenString string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
 		}
-		return JWTSecret, nil
+		return s.secret, nil
 	})
 
 	if err != nil {
@@ -61,4 +71,14 @@ func ParseToken(tokenString string) (*Claims, error) {
 	}
 
 	return nil, errors.New("invalid token")
+}
+
+// GetExpireDuration 获取过期时间
+func (s *JWTService) GetExpireDuration() time.Duration {
+	return s.expireDuration
+}
+
+// GetResetExpireDuration 获取重置密码过期时间
+func (s *JWTService) GetResetExpireDuration() time.Duration {
+	return s.resetExpireDuration
 }

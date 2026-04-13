@@ -14,13 +14,14 @@ import (
 
 // ModuleController 模块控制器，实现 RestController 接口
 type ModuleController struct {
-	svc *service.ModuleService
-	rs  *service.RoleService
+	svc           *service.ModuleService
+	rs            *service.RoleService
+	authMiddleware *middleware.AuthMiddleware
 }
 
 // NewModuleController 创建模块控制器
-func NewModuleController(moduleSvc *service.ModuleService, roleSvc *service.RoleService) *ModuleController {
-	return &ModuleController{svc: moduleSvc, rs: roleSvc}
+func NewModuleController(moduleSvc *service.ModuleService, roleSvc *service.RoleService, authMiddleware *middleware.AuthMiddleware) *ModuleController {
+	return &ModuleController{svc: moduleSvc, rs: roleSvc, authMiddleware: authMiddleware}
 }
 
 func (c *ModuleController) Name() string { return "modules" }
@@ -30,11 +31,11 @@ func (c *ModuleController) Middlewares() []ginserver.MiddlewaresObject {
 	return []ginserver.MiddlewaresObject{
 		{
 			Methods:     []string{"GET"},
-			Middlewares: []gin.HandlerFunc{middleware.Auth(), middleware.RequirePermission(c.rs, "module", "read")},
+			Middlewares: []gin.HandlerFunc{c.authMiddleware.Auth(), middleware.RequirePermission(c.rs, "module", "read")},
 		},
 		{
 			Methods:     []string{"POST", "PUT", "DELETE"},
-			Middlewares: []gin.HandlerFunc{middleware.Auth(), middleware.RequireRole("admin")},
+			Middlewares: []gin.HandlerFunc{c.authMiddleware.Auth(), middleware.RequireRole("admin")},
 		},
 	}
 }

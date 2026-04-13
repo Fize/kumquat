@@ -13,12 +13,13 @@ import (
 
 // RoleController 角色控制器，实现 RestController 接口
 type RoleController struct {
-	svc *service.RoleService
+	svc           *service.RoleService
+	authMiddleware *middleware.AuthMiddleware
 }
 
 // NewRoleController 创建角色控制器
-func NewRoleController(roleSvc *service.RoleService) *RoleController {
-	return &RoleController{svc: roleSvc}
+func NewRoleController(roleSvc *service.RoleService, authMiddleware *middleware.AuthMiddleware) *RoleController {
+	return &RoleController{svc: roleSvc, authMiddleware: authMiddleware}
 }
 
 func (c *RoleController) Name() string { return "roles" }
@@ -28,7 +29,7 @@ func (c *RoleController) Middlewares() []ginserver.MiddlewaresObject {
 	return []ginserver.MiddlewaresObject{
 		{
 			Methods:     []string{"GET"},
-			Middlewares: []gin.HandlerFunc{middleware.Auth(), middleware.RequirePermission(c.svc, "role", "read")},
+			Middlewares: []gin.HandlerFunc{c.authMiddleware.Auth(), middleware.RequirePermission(c.svc, "role", "read")},
 		},
 	}
 }

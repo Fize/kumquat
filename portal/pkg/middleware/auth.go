@@ -15,8 +15,18 @@ const (
 	ContextKeyRoleName = "roleName"
 )
 
+// AuthMiddleware JWT 认证中间件
+type AuthMiddleware struct {
+	jwtService *service.JWTService
+}
+
+// NewAuthMiddleware 创建认证中间件
+func NewAuthMiddleware(jwtService *service.JWTService) *AuthMiddleware {
+	return &AuthMiddleware{jwtService: jwtService}
+}
+
 // Auth JWT认证中间件
-func Auth() gin.HandlerFunc {
+func (m *AuthMiddleware) Auth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -32,7 +42,7 @@ func Auth() gin.HandlerFunc {
 			return
 		}
 
-		claims, err := utils.ParseToken(parts[1])
+		claims, err := m.jwtService.ParseToken(parts[1])
 		if err != nil {
 			utils.Unauthorized(c, "invalid or expired token")
 			c.Abort()
