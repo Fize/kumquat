@@ -14,6 +14,7 @@ import (
 	"github.com/fize/kumquat/portal/pkg/handler"
 	"github.com/fize/kumquat/portal/pkg/middleware"
 	"github.com/fize/kumquat/portal/pkg/migration"
+	"github.com/fize/kumquat/portal/pkg/repository"
 	"github.com/fize/kumquat/portal/pkg/service"
 	"github.com/fize/kumquat/portal/pkg/utils"
 	"github.com/gin-gonic/gin"
@@ -46,11 +47,11 @@ func main() {
 	}
 	log.Info("database migrated")
 
-	roleService := service.NewRoleService(db)
-	if err := roleService.InitRoles(); err != nil {
-		log.Fatal("failed to initialize roles", "err", err)
-	}
-	log.Info("roles and permissions initialized")
+	// 初始化 Repository
+	userRepo := repository.NewUserRepository(db)
+	roleRepo := repository.NewRoleRepository(db)
+	moduleRepo := repository.NewModuleRepository(db)
+	projectRepo := repository.NewProjectRepository(db)
 
 	// 初始化 JWT Service
 	expireDuration, err := time.ParseDuration(cfg.JWT.ExpireDuration)
@@ -63,11 +64,24 @@ func main() {
 	}
 	jwtService := service.NewJWTService(cfg.JWT.Secret, expireDuration, resetExpireDuration)
 
+	// 初始化 Service
+	roleService := service.NewRoleService(roleRepo, db)
+	if err := roleService.InitRoles(); err != nil {
+		log.Fatal("failed to initialize roles", "err", err)
+	}
+	log.Info("roles and permissions initialized")
+
+	authService := service.NewAuthService(userRepo, roleRepo, jwtService, db)
+	userService := service.NewUserService(userRepo, roleRepo, db)
+	moduleService := service.NewModuleService(moduleRepo, db)
+	projectService := service.NewProjectService(projectRepo, db)
+
+	// 初始化 Middleware
 	authMiddleware := middleware.NewAuthMiddleware(jwtService)
 
 	server.Engine.Use(middleware.CORS())
 
-	registerRoutes(server.Engine, db, roleService, jwtService, authMiddleware)
+	registerRoutes(server.Engine, db, authService, userService, moduleService, projectService, roleService, authMiddleware)
 
 	ctx, cancel, err := server.RunWithContext()
 	if err != nil {
@@ -142,13 +156,8 @@ func initDB(cfg *PortalConfig, logger *log.Logger) (*gorm.DB, error) {
 	)
 }
 
-func registerRoutes(engine *gin.Engine, db *gorm.DB, roleService *service.RoleService, jwtService *service.JWTService, authMiddleware *middleware.AuthMiddleware) {
+func registerRoutes(engine *gin.Engine, db *gorm.DB, authService *service.AuthService, userService *service.UserService, moduleService *service.ModuleService, projectService *service.ProjectService, roleService *service.RoleService, authMiddleware *middleware.AuthMiddleware) {
 	api := engine.Group("/api/v1")
-
-	authService := service.NewAuthService(db, jwtService)
-	userService := service.NewUserService(db)
-	moduleService := service.NewModuleService(db)
-	projectService := service.NewProjectService(db)
 
 	authHandler := handler.NewAuthController(authService, authMiddleware)
 	authHandler.SetupRoutes(api)
@@ -160,13 +169,10 @@ func registerRoutes(engine *gin.Engine, db *gorm.DB, roleService *service.RoleSe
 	restful.Install(engine, handler.NewModuleController(moduleService, roleService, authMiddleware))
 	restful.Install(engine, handler.NewProjectController(projectService, roleService, authMiddleware))
 
-	registerCustomRoutes(api, db, roleService, authMiddleware)
+	registerCustomRoutes(api, moduleService, projectService, roleService, authMiddleware)
 }
 
-func registerCustomRoutes(api *gin.RouterGroup, db *gorm.DB, roleService *service.RoleService, authMiddleware *middleware.AuthMiddleware) {
-	moduleService := service.NewModuleService(db)
-	projectService := service.NewProjectService(db)
-
+func registerCustomRoutes(api *gin.RouterGroup, moduleService *service.ModuleService, projectService *service.ProjectService, roleService *service.RoleService, authMiddleware *middleware.AuthMiddleware) {
 	api.GET("/modules/:id/children", authMiddleware.Auth(),
 		middleware.RequirePermission(roleService, "module", "read"),
 		func(c *gin.Context) {
@@ -178,7 +184,7 @@ func registerCustomRoutes(api *gin.RouterGroup, db *gorm.DB, roleService *servic
 			module, err := moduleService.GetByID(c.Request.Context(), uint(id))
 			if err != nil {
 				log.WarnContext(c.Request.Context(), "get module children failed", "id", id, "err", err)
-				utils.NotFound(c, "module not found")
+				utils.ErrorFromErr(c, err)
 				return
 			}
 			utils.Success(c, module.Children)
@@ -196,7 +202,7 @@ func registerCustomRoutes(api *gin.RouterGroup, db *gorm.DB, roleService *servic
 			projects, total, err := projectService.ListByModule(c.Request.Context(), uint(moduleId), page, size)
 			if err != nil {
 				log.ErrorContext(c.Request.Context(), "list projects by module failed", "module_id", moduleId, "err", err)
-				utils.InternalError(c, err.Error())
+				utils.ErrorFromErr(c, err)
 				return
 			}
 			list := make([]map[string]interface{}, len(projects))
@@ -217,7 +223,7 @@ func registerCustomRoutes(api *gin.RouterGroup, db *gorm.DB, roleService *servic
 			perms, err := roleService.GetPermissions(c.Request.Context(), uint(id))
 			if err != nil {
 				log.WarnContext(c.Request.Context(), "get role permissions failed", "id", id, "err", err)
-				utils.NotFound(c, err.Error())
+				utils.ErrorFromErr(c, err)
 				return
 			}
 			utils.Success(c, gin.H{"permissions": perms})
