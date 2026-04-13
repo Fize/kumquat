@@ -57,8 +57,9 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (str
 	return token, user, nil
 }
 
-// Register 用户注册
+// Register 用户注册（使用事务）
 func (s *AuthService) Register(ctx context.Context, username, email, password, nickname string) (*model.User, error) {
+	// 预检查
 	exists, err := s.repo.ExistsByUsername(ctx, username)
 	if err != nil {
 		return nil, apperr.WrapCode(apperr.CodeInternal, err)
@@ -77,26 +78,38 @@ func (s *AuthService) Register(ctx context.Context, username, email, password, n
 		return nil, apperr.New(apperr.CodeEmailExists, "")
 	}
 
-	role, err := s.roleRepo.GetByName(ctx, model.RoleGuest)
+	var user model.User
+	var role model.Role
+
+	// 在事务中创建用户
+	err = repository.WithTransaction(s.db, ctx, func(tx *gorm.DB) error {
+		// 查询默认角色
+		if err := tx.Where("name = ?", model.RoleGuest).First(&role).Error; err != nil {
+			log.ErrorContext(ctx, "register failed: default role not found", "err", err)
+			return err
+		}
+
+		user = model.User{
+			Username: username,
+			Email:    email,
+			Nickname: nickname,
+			RoleID:   role.ID,
+		}
+		user.SetPassword(password)
+
+		if err := tx.Create(&user).Error; err != nil {
+			log.ErrorContext(ctx, "register failed: create user error", "err", err, "username", username)
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		log.ErrorContext(ctx, "register failed: default role not found", "err", err)
-		return nil, apperr.New(apperr.CodeDefaultRoleNotFound, "")
-	}
-
-	user := model.User{
-		Username: username,
-		Email:    email,
-		Nickname: nickname,
-		RoleID:   role.ID,
-	}
-	user.SetPassword(password)
-
-	if err := s.repo.Create(ctx, &user); err != nil {
-		log.ErrorContext(ctx, "register failed: create user error", "err", err, "username", username)
 		return nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
-	user.Role = *role
+	user.Role = role
 	log.InfoContext(ctx, "user registered", "user_id", user.ID, "username", username, "email", email)
 	return &user, nil
 }

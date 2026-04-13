@@ -15,7 +15,7 @@ import (
 // ModuleService 模块服务
 type ModuleService struct {
 	repo repository.ModuleRepository
-	db   *gorm.DB // 保留用于递归删除
+	db   *gorm.DB // 保留用于递归删除事务
 }
 
 // NewModuleService 创建模块服务
@@ -128,39 +128,43 @@ func (s *ModuleService) Update(ctx context.Context, id uint, name string, sort i
 	return s.repo.GetByID(ctx, id)
 }
 
-// Delete 删除模块（递归删除子模块）
+// Delete 删除模块（递归删除子模块，使用事务）
 func (s *ModuleService) Delete(ctx context.Context, id uint) error {
-	module, err := s.repo.GetByID(ctx, id)
+	// 先检查模块是否存在
+	_, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		log.WarnContext(ctx, "delete module failed: not found", "module_id", id)
 		return apperr.New(apperr.CodeModuleNotFound, "")
 	}
 
-	if err := s.deleteChildren(ctx, id); err != nil {
-		log.ErrorContext(ctx, "delete module failed: delete children error", "err", err, "module_id", id)
-		return apperr.WrapCode(apperr.CodeInternal, err)
-	}
-
-	if err := s.repo.Delete(ctx, id); err != nil {
-		log.ErrorContext(ctx, "delete module failed: db error", "err", err, "module_id", id)
-		return apperr.WrapCode(apperr.CodeInternal, err)
-	}
-
-	log.InfoContext(ctx, "module deleted", "module_id", id, "name", module.Name)
-	return nil
+	// 在事务中递归删除
+	return repository.WithTransaction(s.db, ctx, func(tx *gorm.DB) error {
+		if err := s.deleteChildrenTx(tx, id); err != nil {
+			log.ErrorContext(ctx, "delete module failed: delete children error", "err", err, "module_id", id)
+			return err
+		}
+		if err := tx.Delete(&model.Module{}, id).Error; err != nil {
+			return err
+		}
+		log.InfoContext(ctx, "module deleted", "module_id", id)
+		return nil
+	})
 }
 
-func (s *ModuleService) deleteChildren(ctx context.Context, parentID uint) error {
-	children, err := s.repo.GetChildren(ctx, parentID)
-	if err != nil {
+// deleteChildrenTx 在事务中递归删除子模块
+func (s *ModuleService) deleteChildrenTx(tx *gorm.DB, parentID uint) error {
+	var children []model.Module
+	if err := tx.Where("parent_id = ?", parentID).Find(&children).Error; err != nil {
 		return err
 	}
 
 	for _, child := range children {
-		if err := s.deleteChildren(ctx, child.ID); err != nil {
+		if err := s.deleteChildrenTx(tx, child.ID); err != nil {
 			return err
 		}
-		s.db.Delete(&child)
+		if err := tx.Delete(&child).Error; err != nil {
+			return err
+		}
 	}
 	return nil
 }

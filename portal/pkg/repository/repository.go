@@ -71,3 +71,8 @@ func (r *BaseRepository[T]) Delete(ctx context.Context, id uint) error {
 func (r *BaseRepository[T]) DB() *gorm.DB {
 	return r.db
 }
+
+// WithTransaction 在事务中执行函数
+func WithTransaction(db *gorm.DB, ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return db.WithContext(ctx).Transaction(fn)
+}
