@@ -29,10 +29,6 @@ func (Module) TableName() string {
 
 // BeforeCreate 创建前校验和计算
 func (m *Module) BeforeCreate(tx *gorm.DB) error {
-	if m.Level < 1 || m.Level > MaxModuleLevel {
-		return fmt.Errorf("module level must be between 1 and %d", MaxModuleLevel)
-	}
-
 	if m.ParentID != nil {
 		var parent Module
 		if err := tx.First(&parent, *m.ParentID).Error; err != nil {
