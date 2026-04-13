@@ -8,23 +8,25 @@ import (
 	"github.com/fize/go-ext/log"
 	apperr "github.com/fize/kumquat/portal/pkg/errors"
 	"github.com/fize/kumquat/portal/pkg/model"
+	"github.com/fize/kumquat/portal/pkg/repository"
 	"gorm.io/gorm"
 )
 
 // ModuleService 模块服务
 type ModuleService struct {
-	db *gorm.DB
+	repo repository.ModuleRepository
+	db   *gorm.DB // 保留用于递归删除
 }
 
 // NewModuleService 创建模块服务
-func NewModuleService(db *gorm.DB) *ModuleService {
-	return &ModuleService{db: db}
+func NewModuleService(repo repository.ModuleRepository, db *gorm.DB) *ModuleService {
+	return &ModuleService{repo: repo, db: db}
 }
 
 // List 获取模块列表（树形）
 func (s *ModuleService) List(ctx context.Context) ([]model.Module, error) {
-	var modules []model.Module
-	if err := s.db.Find(&modules).Error; err != nil {
+	modules, err := s.repo.List(ctx)
+	if err != nil {
 		log.ErrorContext(ctx, "list modules failed", "err", err)
 		return nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
@@ -64,23 +66,23 @@ func (s *ModuleService) buildTree(modules []model.Module) []model.Module {
 
 // GetByID 根据ID获取模块
 func (s *ModuleService) GetByID(ctx context.Context, id uint) (*model.Module, error) {
-	var module model.Module
-	if err := s.db.First(&module, id).Error; err != nil {
+	module, err := s.repo.GetByID(ctx, id)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, apperr.New(apperr.CodeModuleNotFound, "")
 		}
 		return nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
-	return &module, nil
+	return module, nil
 }
 
 // Create 创建模块
 func (s *ModuleService) Create(ctx context.Context, name string, parentID *uint, sort int) (*model.Module, error) {
 	if parentID != nil {
-		parent, err := s.GetByID(ctx, *parentID)
+		parent, err := s.repo.GetByID(ctx, *parentID)
 		if err != nil {
 			log.WarnContext(ctx, "create module failed: parent not found", "parent_id", *parentID)
-			return nil, err
+			return nil, apperr.New(apperr.CodeModuleNotFound, "parent module not found")
 		}
 		if parent.Level >= model.MaxModuleLevel {
 			log.WarnContext(ctx, "create module failed: parent at max level", "parent_id", *parentID, "level", parent.Level)
@@ -94,21 +96,21 @@ func (s *ModuleService) Create(ctx context.Context, name string, parentID *uint,
 		Sort:     sort,
 	}
 
-	if err := s.db.Create(&module).Error; err != nil {
+	if err := s.repo.Create(ctx, &module); err != nil {
 		log.ErrorContext(ctx, "create module failed: db error", "err", err, "name", name)
 		return nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	log.InfoContext(ctx, "module created", "module_id", module.ID, "name", name, "parent_id", parentID)
-	return s.GetByID(ctx, module.ID)
+	return s.repo.GetByID(ctx, module.ID)
 }
 
 // Update 更新模块
 func (s *ModuleService) Update(ctx context.Context, id uint, name string, sort int) (*model.Module, error) {
-	module, err := s.GetByID(ctx, id)
+	module, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		log.WarnContext(ctx, "update module failed: not found", "module_id", id)
-		return nil, err
+		return nil, apperr.New(apperr.CodeModuleNotFound, "")
 	}
 
 	updates := map[string]interface{}{}
@@ -117,21 +119,21 @@ func (s *ModuleService) Update(ctx context.Context, id uint, name string, sort i
 	}
 	updates["sort"] = sort
 
-	if err := s.db.Model(module).Updates(updates).Error; err != nil {
+	if err := s.repo.Update(ctx, module, updates); err != nil {
 		log.ErrorContext(ctx, "update module failed: db error", "err", err, "module_id", id)
 		return nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	log.InfoContext(ctx, "module updated", "module_id", id, "name", name)
-	return s.GetByID(ctx, id)
+	return s.repo.GetByID(ctx, id)
 }
 
 // Delete 删除模块（递归删除子模块）
 func (s *ModuleService) Delete(ctx context.Context, id uint) error {
-	module, err := s.GetByID(ctx, id)
+	module, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		log.WarnContext(ctx, "delete module failed: not found", "module_id", id)
-		return err
+		return apperr.New(apperr.CodeModuleNotFound, "")
 	}
 
 	if err := s.deleteChildren(ctx, id); err != nil {
@@ -139,7 +141,7 @@ func (s *ModuleService) Delete(ctx context.Context, id uint) error {
 		return apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
-	if err := s.db.Delete(module).Error; err != nil {
+	if err := s.repo.Delete(ctx, id); err != nil {
 		log.ErrorContext(ctx, "delete module failed: db error", "err", err, "module_id", id)
 		return apperr.WrapCode(apperr.CodeInternal, err)
 	}
@@ -149,8 +151,8 @@ func (s *ModuleService) Delete(ctx context.Context, id uint) error {
 }
 
 func (s *ModuleService) deleteChildren(ctx context.Context, parentID uint) error {
-	var children []model.Module
-	if err := s.db.Where("parent_id = ?", parentID).Find(&children).Error; err != nil {
+	children, err := s.repo.GetChildren(ctx, parentID)
+	if err != nil {
 		return err
 	}
 
