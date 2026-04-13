@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 
 	"github.com/fize/go-ext/log"
@@ -19,17 +20,17 @@ func NewRoleService(db *gorm.DB) *RoleService {
 }
 
 // List 获取角色列表
-func (s *RoleService) List() ([]model.Role, error) {
+func (s *RoleService) List(ctx context.Context) ([]model.Role, error) {
 	var roles []model.Role
 	if err := s.db.Find(&roles).Error; err != nil {
-		log.Error("list roles failed", "err", err)
+		log.ErrorContext(ctx, "list roles failed", "err", err)
 		return nil, err
 	}
 	return roles, nil
 }
 
 // GetByID 根据ID获取角色
-func (s *RoleService) GetByID(id uint) (*model.Role, error) {
+func (s *RoleService) GetByID(ctx context.Context, id uint) (*model.Role, error) {
 	var role model.Role
 	if err := s.db.First(&role, id).Error; err != nil {
 		return nil, err
@@ -38,16 +39,16 @@ func (s *RoleService) GetByID(id uint) (*model.Role, error) {
 }
 
 // GetPermissions 获取角色权限
-func (s *RoleService) GetPermissions(roleID uint) ([]model.Permission, error) {
-	role, err := s.GetByID(roleID)
+func (s *RoleService) GetPermissions(ctx context.Context, roleID uint) ([]model.Permission, error) {
+	role, err := s.GetByID(ctx, roleID)
 	if err != nil {
-		log.Warn("get permissions failed: role not found", "role_id", roleID)
+		log.WarnContext(ctx, "get permissions failed: role not found", "role_id", roleID)
 		return nil, errors.New("role not found")
 	}
 
 	var perms []model.Permission
 	if err := s.db.Where("role_id = ?", role.ID).Find(&perms).Error; err != nil {
-		log.Error("get permissions failed: db error", "err", err, "role_id", role.ID)
+		log.ErrorContext(ctx, "get permissions failed: db error", "err", err, "role_id", role.ID)
 		return nil, err
 	}
 	return perms, nil
@@ -95,10 +96,10 @@ func (s *RoleService) InitRoles() error {
 
 // CheckPermission 检查角色权限
 // 逻辑：查询该角色的所有权限规则，逐条匹配，deny 优先于 allow
-func (s *RoleService) CheckPermission(roleID uint, resource, action string) (bool, error) {
+func (s *RoleService) CheckPermission(ctx context.Context, roleID uint, resource, action string) (bool, error) {
 	var perms []model.Permission
 	if err := s.db.Where("role_id = ?", roleID).Find(&perms).Error; err != nil {
-		log.Error("check permission failed: db error", "err", err, "role_id", roleID)
+		log.ErrorContext(ctx, "check permission failed: db error", "err", err, "role_id", roleID)
 		return false, err
 	}
 
