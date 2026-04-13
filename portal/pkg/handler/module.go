@@ -41,7 +41,7 @@ func (c *ModuleController) Middlewares() []ginserver.MiddlewaresObject {
 
 func (c *ModuleController) List() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
-		modules, err := c.svc.List()
+		modules, err := c.svc.List(ctx.Request.Context())
 		if err != nil {
 			log.ErrorContext(ctx.Request.Context(), "list modules failed", "err", err)
 			utils.InternalError(ctx, err.Error())
@@ -62,7 +62,7 @@ func (c *ModuleController) Get() (gin.HandlerFunc, error) {
 			utils.BadRequest(ctx, "invalid id")
 			return
 		}
-		module, err := c.svc.GetByID(uint(id))
+		module, err := c.svc.GetByID(ctx.Request.Context(), uint(id))
 		if err != nil {
 			log.WarnContext(ctx.Request.Context(), "get module failed", "id", id, "err", err)
 			utils.NotFound(ctx, "module not found")
@@ -84,7 +84,7 @@ func (c *ModuleController) Create() (gin.HandlerFunc, error) {
 			utils.BadRequest(ctx, err.Error())
 			return
 		}
-		module, err := c.svc.Create(req.Name, req.ParentID, req.Sort)
+		module, err := c.svc.Create(ctx.Request.Context(), req.Name, req.ParentID, req.Sort)
 		if err != nil {
 			log.WarnContext(ctx.Request.Context(), "create module failed", "name", req.Name, "err", err)
 			utils.Conflict(ctx, err.Error())
@@ -111,7 +111,7 @@ func (c *ModuleController) Update() (gin.HandlerFunc, error) {
 			utils.BadRequest(ctx, err.Error())
 			return
 		}
-		module, err := c.svc.Update(uint(id), req.Name, req.Sort)
+		module, err := c.svc.Update(ctx.Request.Context(), uint(id), req.Name, req.Sort)
 		if err != nil {
 			log.WarnContext(ctx.Request.Context(), "update module failed", "id", id, "err", err)
 			utils.NotFound(ctx, err.Error())
@@ -129,7 +129,7 @@ func (c *ModuleController) Delete() (gin.HandlerFunc, error) {
 			utils.BadRequest(ctx, "invalid id")
 			return
 		}
-		if err := c.svc.Delete(uint(id)); err != nil {
+		if err := c.svc.Delete(ctx.Request.Context(), uint(id)); err != nil {
 			log.WarnContext(ctx.Request.Context(), "delete module failed", "id", id, "err", err)
 			utils.Conflict(ctx, err.Error())
 			return

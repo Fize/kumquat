@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"sort"
 
@@ -20,10 +21,10 @@ func NewModuleService(db *gorm.DB) *ModuleService {
 }
 
 // List 获取模块列表（树形）
-func (s *ModuleService) List() ([]model.Module, error) {
+func (s *ModuleService) List(ctx context.Context) ([]model.Module, error) {
 	var modules []model.Module
 	if err := s.db.Find(&modules).Error; err != nil {
-		log.Error("list modules failed", "err", err)
+		log.ErrorContext(ctx, "list modules failed", "err", err)
 		return nil, err
 	}
 	return s.buildTree(modules), nil
@@ -61,7 +62,7 @@ func (s *ModuleService) buildTree(modules []model.Module) []model.Module {
 }
 
 // GetByID 根据ID获取模块
-func (s *ModuleService) GetByID(id uint) (*model.Module, error) {
+func (s *ModuleService) GetByID(ctx context.Context, id uint) (*model.Module, error) {
 	var module model.Module
 	if err := s.db.First(&module, id).Error; err != nil {
 		return nil, err
@@ -70,15 +71,15 @@ func (s *ModuleService) GetByID(id uint) (*model.Module, error) {
 }
 
 // Create 创建模块
-func (s *ModuleService) Create(name string, parentID *uint, sort int) (*model.Module, error) {
+func (s *ModuleService) Create(ctx context.Context, name string, parentID *uint, sort int) (*model.Module, error) {
 	if parentID != nil {
-		parent, err := s.GetByID(*parentID)
+		parent, err := s.GetByID(ctx, *parentID)
 		if err != nil {
-			log.Warn("create module failed: parent not found", "parent_id", *parentID)
+			log.WarnContext(ctx, "create module failed: parent not found", "parent_id", *parentID)
 			return nil, errors.New("parent module not found")
 		}
 		if parent.Level >= model.MaxModuleLevel {
-			log.Warn("create module failed: parent at max level", "parent_id", *parentID, "level", parent.Level)
+			log.WarnContext(ctx, "create module failed: parent at max level", "parent_id", *parentID, "level", parent.Level)
 			return nil, errors.New("parent module already at max level")
 		}
 	}
@@ -90,19 +91,19 @@ func (s *ModuleService) Create(name string, parentID *uint, sort int) (*model.Mo
 	}
 
 	if err := s.db.Create(&module).Error; err != nil {
-		log.Error("create module failed: db error", "err", err, "name", name)
+		log.ErrorContext(ctx, "create module failed: db error", "err", err, "name", name)
 		return nil, err
 	}
 
-	log.Info("module created", "module_id", module.ID, "name", name, "parent_id", parentID)
-	return s.GetByID(module.ID)
+	log.InfoContext(ctx, "module created", "module_id", module.ID, "name", name, "parent_id", parentID)
+	return s.GetByID(ctx, module.ID)
 }
 
 // Update 更新模块
-func (s *ModuleService) Update(id uint, name string, sort int) (*model.Module, error) {
-	module, err := s.GetByID(id)
+func (s *ModuleService) Update(ctx context.Context, id uint, name string, sort int) (*model.Module, error) {
+	module, err := s.GetByID(ctx, id)
 	if err != nil {
-		log.Warn("update module failed: not found", "module_id", id)
+		log.WarnContext(ctx, "update module failed: not found", "module_id", id)
 		return nil, errors.New("module not found")
 	}
 
@@ -113,44 +114,44 @@ func (s *ModuleService) Update(id uint, name string, sort int) (*model.Module, e
 	updates["sort"] = sort
 
 	if err := s.db.Model(module).Updates(updates).Error; err != nil {
-		log.Error("update module failed: db error", "err", err, "module_id", id)
+		log.ErrorContext(ctx, "update module failed: db error", "err", err, "module_id", id)
 		return nil, err
 	}
 
-	log.Info("module updated", "module_id", id, "name", name)
-	return s.GetByID(id)
+	log.InfoContext(ctx, "module updated", "module_id", id, "name", name)
+	return s.GetByID(ctx, id)
 }
 
 // Delete 删除模块（递归删除子模块）
-func (s *ModuleService) Delete(id uint) error {
-	module, err := s.GetByID(id)
+func (s *ModuleService) Delete(ctx context.Context, id uint) error {
+	module, err := s.GetByID(ctx, id)
 	if err != nil {
-		log.Warn("delete module failed: not found", "module_id", id)
+		log.WarnContext(ctx, "delete module failed: not found", "module_id", id)
 		return errors.New("module not found")
 	}
 
-	if err := s.deleteChildren(id); err != nil {
-		log.Error("delete module failed: delete children error", "err", err, "module_id", id)
+	if err := s.deleteChildren(ctx, id); err != nil {
+		log.ErrorContext(ctx, "delete module failed: delete children error", "err", err, "module_id", id)
 		return err
 	}
 
 	if err := s.db.Delete(module).Error; err != nil {
-		log.Error("delete module failed: db error", "err", err, "module_id", id)
+		log.ErrorContext(ctx, "delete module failed: db error", "err", err, "module_id", id)
 		return err
 	}
 
-	log.Info("module deleted", "module_id", id, "name", module.Name)
+	log.InfoContext(ctx, "module deleted", "module_id", id, "name", module.Name)
 	return nil
 }
 
-func (s *ModuleService) deleteChildren(parentID uint) error {
+func (s *ModuleService) deleteChildren(ctx context.Context, parentID uint) error {
 	var children []model.Module
 	if err := s.db.Where("parent_id = ?", parentID).Find(&children).Error; err != nil {
 		return err
 	}
 
 	for _, child := range children {
-		if err := s.deleteChildren(child.ID); err != nil {
+		if err := s.deleteChildren(ctx, child.ID); err != nil {
 			return err
 		}
 		s.db.Delete(&child)

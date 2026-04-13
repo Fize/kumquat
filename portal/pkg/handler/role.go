@@ -35,7 +35,7 @@ func (c *RoleController) Middlewares() []ginserver.MiddlewaresObject {
 
 func (c *RoleController) List() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
-		roles, err := c.svc.List()
+		roles, err := c.svc.List(ctx.Request.Context())
 		if err != nil {
 			log.ErrorContext(ctx.Request.Context(), "list roles failed", "err", err)
 			utils.InternalError(ctx, err.Error())
@@ -56,7 +56,7 @@ func (c *RoleController) Get() (gin.HandlerFunc, error) {
 			utils.BadRequest(ctx, "invalid id")
 			return
 		}
-		role, err := c.svc.GetByID(uint(id))
+		role, err := c.svc.GetByID(ctx.Request.Context(), uint(id))
 		if err != nil {
 			log.WarnContext(ctx.Request.Context(), "get role failed", "id", id, "err", err)
 			utils.NotFound(ctx, "role not found")

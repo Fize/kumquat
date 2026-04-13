@@ -42,7 +42,7 @@ func (c *UserController) Middlewares() []ginserver.MiddlewaresObject {
 func (c *UserController) List() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
 		page, size := utils.GetPageSize(ctx)
-		users, total, err := c.svc.List(page, size)
+		users, total, err := c.svc.List(ctx.Request.Context(), page, size)
 		if err != nil {
 			log.ErrorContext(ctx.Request.Context(), "list users failed", "err", err)
 			utils.InternalError(ctx, err.Error())
@@ -63,7 +63,7 @@ func (c *UserController) Get() (gin.HandlerFunc, error) {
 			utils.BadRequest(ctx, "invalid id")
 			return
 		}
-		user, err := c.svc.GetByID(uint(id))
+		user, err := c.svc.GetByID(ctx.Request.Context(), uint(id))
 		if err != nil {
 			log.WarnContext(ctx.Request.Context(), "get user failed", "id", id, "err", err)
 			utils.NotFound(ctx, "user not found")
@@ -88,7 +88,7 @@ func (c *UserController) Create() (gin.HandlerFunc, error) {
 			utils.BadRequest(ctx, err.Error())
 			return
 		}
-		user, err := c.svc.Create(req.Username, req.Email, req.Password, req.Nickname, req.RoleID, req.ModuleID)
+		user, err := c.svc.Create(ctx.Request.Context(), req.Username, req.Email, req.Password, req.Nickname, req.RoleID, req.ModuleID)
 		if err != nil {
 			log.WarnContext(ctx.Request.Context(), "create user failed", "username", req.Username, "err", err)
 			utils.Conflict(ctx, err.Error())
@@ -116,7 +116,7 @@ func (c *UserController) Update() (gin.HandlerFunc, error) {
 			utils.BadRequest(ctx, err.Error())
 			return
 		}
-		user, err := c.svc.Update(uint(id), req.Nickname, req.RoleID, req.ModuleID)
+		user, err := c.svc.Update(ctx.Request.Context(), uint(id), req.Nickname, req.RoleID, req.ModuleID)
 		if err != nil {
 			log.WarnContext(ctx.Request.Context(), "update user failed", "id", id, "err", err)
 			utils.NotFound(ctx, err.Error())
@@ -134,7 +134,7 @@ func (c *UserController) Delete() (gin.HandlerFunc, error) {
 			utils.BadRequest(ctx, "invalid id")
 			return
 		}
-		if err := c.svc.Delete(uint(id)); err != nil {
+		if err := c.svc.Delete(ctx.Request.Context(), uint(id)); err != nil {
 			log.WarnContext(ctx.Request.Context(), "delete user failed", "id", id, "err", err)
 			if errors.Is(err, errors.New("cannot delete the last admin")) {
 				utils.Forbidden(ctx, err.Error())

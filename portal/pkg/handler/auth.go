@@ -44,7 +44,7 @@ func (h *AuthController) Login(c *gin.Context) {
 		utils.BadRequest(c, err.Error())
 		return
 	}
-	token, user, err := h.authService.Login(req.Username, req.Password)
+	token, user, err := h.authService.Login(c.Request.Context(), req.Username, req.Password)
 	if err != nil {
 		log.WarnContext(c.Request.Context(), "login failed", "username", req.Username, "err", err)
 		utils.Unauthorized(c, err.Error())
@@ -67,7 +67,7 @@ func (h *AuthController) DoRegister(c *gin.Context) {
 		utils.BadRequest(c, err.Error())
 		return
 	}
-	user, err := h.authService.Register(req.Username, req.Email, req.Password, req.Nickname)
+	user, err := h.authService.Register(c.Request.Context(), req.Username, req.Email, req.Password, req.Nickname)
 	if err != nil {
 		log.WarnContext(c.Request.Context(), "register failed", "username", req.Username, "err", err)
 		utils.Conflict(c, err.Error())
@@ -80,7 +80,7 @@ func (h *AuthController) DoRegister(c *gin.Context) {
 // Me 获取当前用户
 func (h *AuthController) Me(c *gin.Context) {
 	userID := middleware.GetUserID(c)
-	user, err := h.authService.GetUserByID(userID)
+	user, err := h.authService.GetUserByID(c.Request.Context(), userID)
 	if err != nil {
 		log.WarnContext(c.Request.Context(), "get current user failed", "user_id", userID, "err", err)
 		utils.NotFound(c, "user not found")
@@ -101,7 +101,7 @@ func (h *AuthController) ChangePassword(c *gin.Context) {
 		utils.BadRequest(c, err.Error())
 		return
 	}
-	if err := h.authService.ChangePassword(userID, req.OldPassword, req.NewPassword); err != nil {
+	if err := h.authService.ChangePassword(c.Request.Context(), userID, req.OldPassword, req.NewPassword); err != nil {
 		log.WarnContext(c.Request.Context(), "change password failed", "user_id", userID, "err", err)
 		utils.Forbidden(c, err.Error())
 		return

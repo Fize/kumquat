@@ -18,6 +18,7 @@ import (
 	"github.com/fize/kumquat/portal/pkg/utils"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 func main() {
@@ -28,7 +29,13 @@ func main() {
 
 	log.Info("starting portal server")
 
-	db, err := initDB(cfg)
+	server, err := ginserver.NewServer(&cfg.BaseConfig)
+	if err != nil {
+		log.Fatal("failed to create server", "err", err)
+	}
+	log.Info("ginserver initialized", "metrics", cfg.Server.Metrics.Enabled, "trace", cfg.Server.Trace.Enabled)
+
+	db, err := initDB(cfg, log.Default())
 	if err != nil {
 		log.Fatal("failed to connect database", "err", err)
 	}
@@ -56,12 +63,6 @@ func main() {
 			utils.ResetTokenExpireDuration = d
 		}
 	}
-
-	server, err := ginserver.NewServer(&cfg.BaseConfig)
-	if err != nil {
-		log.Fatal("failed to create server", "err", err)
-	}
-	log.Info("ginserver initialized", "metrics", cfg.Server.Metrics.Enabled, "trace", cfg.Server.Trace.Enabled)
 
 	server.Engine.Use(middleware.CORS())
 
@@ -119,7 +120,7 @@ func loadConfig() (*PortalConfig, error) {
 	return cfg, nil
 }
 
-func initDB(cfg *PortalConfig) (*gorm.DB, error) {
+func initDB(cfg *PortalConfig, logger *log.Logger) (*gorm.DB, error) {
 	sqlCfg, err := config.NewSQLConfig(
 		config.WithType(cfg.SQL.Type),
 		config.WithHost(cfg.SQL.Host),
@@ -133,7 +134,11 @@ func initDB(cfg *PortalConfig) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	return storage.NewDB(sqlCfg)
+	return storage.NewDB(sqlCfg,
+		storage.WithLogger(logger),
+		storage.WithDBSlowThreshold(200*time.Millisecond),
+		storage.WithDBLogLevel(gormlogger.Warn),
+	)
 }
 
 func registerRoutes(engine *gin.Engine, db *gorm.DB, roleService *service.RoleService) {
@@ -169,7 +174,7 @@ func registerCustomRoutes(api *gin.RouterGroup, db *gorm.DB, roleService *servic
 				utils.BadRequest(c, "invalid id")
 				return
 			}
-			module, err := moduleService.GetByID(uint(id))
+			module, err := moduleService.GetByID(c.Request.Context(), uint(id))
 			if err != nil {
 				log.WarnContext(c.Request.Context(), "get module children failed", "id", id, "err", err)
 				utils.NotFound(c, "module not found")
@@ -187,7 +192,7 @@ func registerCustomRoutes(api *gin.RouterGroup, db *gorm.DB, roleService *servic
 				return
 			}
 			page, size := utils.GetPageSize(c)
-			projects, total, err := projectService.ListByModule(uint(moduleId), page, size)
+			projects, total, err := projectService.ListByModule(c.Request.Context(), uint(moduleId), page, size)
 			if err != nil {
 				log.ErrorContext(c.Request.Context(), "list projects by module failed", "module_id", moduleId, "err", err)
 				utils.InternalError(c, err.Error())
@@ -208,7 +213,7 @@ func registerCustomRoutes(api *gin.RouterGroup, db *gorm.DB, roleService *servic
 				utils.BadRequest(c, "invalid id")
 				return
 			}
-			perms, err := roleService.GetPermissions(uint(id))
+			perms, err := roleService.GetPermissions(c.Request.Context(), uint(id))
 			if err != nil {
 				log.WarnContext(c.Request.Context(), "get role permissions failed", "id", id, "err", err)
 				utils.NotFound(c, err.Error())

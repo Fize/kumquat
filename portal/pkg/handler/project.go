@@ -42,7 +42,7 @@ func (c *ProjectController) Middlewares() []ginserver.MiddlewaresObject {
 func (c *ProjectController) List() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
 		page, size := utils.GetPageSize(ctx)
-		projects, total, err := c.svc.List(page, size)
+		projects, total, err := c.svc.List(ctx.Request.Context(), page, size)
 		if err != nil {
 			log.ErrorContext(ctx.Request.Context(), "list projects failed", "err", err)
 			utils.InternalError(ctx, err.Error())
@@ -63,7 +63,7 @@ func (c *ProjectController) Get() (gin.HandlerFunc, error) {
 			utils.BadRequest(ctx, "invalid id")
 			return
 		}
-		project, err := c.svc.GetByID(uint(id))
+		project, err := c.svc.GetByID(ctx.Request.Context(), uint(id))
 		if err != nil {
 			log.WarnContext(ctx.Request.Context(), "get project failed", "id", id, "err", err)
 			utils.NotFound(ctx, "project not found")
@@ -85,7 +85,7 @@ func (c *ProjectController) Create() (gin.HandlerFunc, error) {
 			utils.BadRequest(ctx, err.Error())
 			return
 		}
-		project, err := c.svc.Create(req.Name, req.ModuleID, req.Config)
+		project, err := c.svc.Create(ctx.Request.Context(), req.Name, req.ModuleID, req.Config)
 		if err != nil {
 			log.WarnContext(ctx.Request.Context(), "create project failed", "name", req.Name, "module_id", req.ModuleID, "err", err)
 			utils.Conflict(ctx, err.Error())
@@ -112,7 +112,7 @@ func (c *ProjectController) Update() (gin.HandlerFunc, error) {
 			utils.BadRequest(ctx, err.Error())
 			return
 		}
-		project, err := c.svc.Update(uint(id), req.Name, req.Config)
+		project, err := c.svc.Update(ctx.Request.Context(), uint(id), req.Name, req.Config)
 		if err != nil {
 			log.WarnContext(ctx.Request.Context(), "update project failed", "id", id, "err", err)
 			utils.NotFound(ctx, err.Error())
@@ -130,7 +130,7 @@ func (c *ProjectController) Delete() (gin.HandlerFunc, error) {
 			utils.BadRequest(ctx, "invalid id")
 			return
 		}
-		if err := c.svc.Delete(uint(id)); err != nil {
+		if err := c.svc.Delete(ctx.Request.Context(), uint(id)); err != nil {
 			log.WarnContext(ctx.Request.Context(), "delete project failed", "id", id, "err", err)
 			utils.NotFound(ctx, err.Error())
 			return

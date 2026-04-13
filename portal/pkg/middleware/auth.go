@@ -91,7 +91,7 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 func RequirePermission(roleService *service.RoleService, resource, action string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		roleID := GetRoleID(c)
-		allowed, err := roleService.CheckPermission(roleID, resource, action)
+		allowed, err := roleService.CheckPermission(c.Request.Context(), roleID, resource, action)
 		if err != nil {
 			utils.InternalError(c, "permission check failed")
 			c.Abort()
