@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"errors"
 	"strconv"
 
+	"github.com/fize/go-ext/ginserver"
 	"github.com/fize/go-ext/log"
 	"github.com/fize/kumquat/portal/pkg/middleware"
 	"github.com/fize/kumquat/portal/pkg/service"
@@ -10,121 +12,142 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// UserHandler 用户处理器
-type UserHandler struct {
-	userService *service.UserService
-	roleService *service.RoleService
+// UserController 用户控制器，实现 RestController 接口
+type UserController struct {
+	svc *service.UserService
+	rs  *service.RoleService
 }
 
-// NewUserHandler 创建用户处理器
-func NewUserHandler(userService *service.UserService, roleService *service.RoleService) *UserHandler {
-	return &UserHandler{userService: userService, roleService: roleService}
+// NewUserController 创建用户控制器
+func NewUserController(userSvc *service.UserService, roleSvc *service.RoleService) *UserController {
+	return &UserController{svc: userSvc, rs: roleSvc}
 }
 
-// SetupRoutes 注册路由
-func (h *UserHandler) SetupRoutes(api *gin.RouterGroup) {
-	users := api.Group("/users")
-	users.Use(middleware.Auth())
-	{
-		users.GET("", middleware.RequirePermission(h.roleService, "user", "read"), h.List)
-		users.GET("/:id", middleware.RequirePermission(h.roleService, "user", "read"), h.Get)
-		users.POST("", middleware.RequireRole("admin"), h.Create)
-		users.PUT("/:id", middleware.RequireRole("admin"), h.Update)
-		users.DELETE("/:id", middleware.RequireRole("admin"), h.Delete)
+func (c *UserController) Name() string { return "users" }
+func (c *UserController) Version() string { return "v1" }
+
+func (c *UserController) Middlewares() []ginserver.MiddlewaresObject {
+	return []ginserver.MiddlewaresObject{
+		{
+			Methods:     []string{"GET"},
+			Middlewares: []gin.HandlerFunc{middleware.Auth(), middleware.RequirePermission(c.rs, "user", "read")},
+		},
+		{
+			Methods:     []string{"POST", "DELETE", "PUT"},
+			Middlewares: []gin.HandlerFunc{middleware.Auth(), middleware.RequireRole("admin")},
+		},
 	}
 }
 
-func (h *UserHandler) List(c *gin.Context) {
-	page, size := utils.GetPageSize(c)
-	users, total, err := h.userService.List(page, size)
-	if err != nil {
-		log.ErrorContext(c.Request.Context(), "list users failed", "err", err)
-		utils.InternalError(c, err.Error())
-		return
-	}
-	list := make([]map[string]interface{}, len(users))
-	for i, u := range users {
-		list[i] = u.ToResponse()
-	}
-	utils.PageSuccess(c, total, page, size, list)
+func (c *UserController) List() (gin.HandlerFunc, error) {
+	return func(ctx *gin.Context) {
+		page, size := utils.GetPageSize(ctx)
+		users, total, err := c.svc.List(page, size)
+		if err != nil {
+			log.ErrorContext(ctx.Request.Context(), "list users failed", "err", err)
+			utils.InternalError(ctx, err.Error())
+			return
+		}
+		list := make([]map[string]interface{}, len(users))
+		for i, u := range users {
+			list[i] = u.ToResponse()
+		}
+		utils.PageSuccess(ctx, total, page, size, list)
+	}, nil
 }
 
-func (h *UserHandler) Get(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		utils.BadRequest(c, "invalid id")
-		return
-	}
-	user, err := h.userService.GetByID(uint(id))
-	if err != nil {
-		log.WarnContext(c.Request.Context(), "get user failed", "id", id, "err", err)
-		utils.NotFound(c, "user not found")
-		return
-	}
-	utils.Success(c, user.ToResponse())
+func (c *UserController) Get() (gin.HandlerFunc, error) {
+	return func(ctx *gin.Context) {
+		id, err := strconv.ParseUint(ctx.Param("id"), 10, 32)
+		if err != nil {
+			utils.BadRequest(ctx, "invalid id")
+			return
+		}
+		user, err := c.svc.GetByID(uint(id))
+		if err != nil {
+			log.WarnContext(ctx.Request.Context(), "get user failed", "id", id, "err", err)
+			utils.NotFound(ctx, "user not found")
+			return
+		}
+		utils.Success(ctx, user.ToResponse())
+	}, nil
 }
 
-func (h *UserHandler) Create(c *gin.Context) {
-	var req struct {
-		Username string `json:"username" binding:"required,min=3,max=32"`
-		Email    string `json:"email" binding:"required,email"`
-		Password string `json:"password" binding:"required,min=6,max=32"`
-		Nickname string `json:"nickname"`
-		RoleID   uint   `json:"role_id" binding:"required"`
-		ModuleID *uint  `json:"module_id"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.WarnContext(c.Request.Context(), "create user request validation failed", "err", err)
-		utils.BadRequest(c, err.Error())
-		return
-	}
-	user, err := h.userService.Create(req.Username, req.Email, req.Password, req.Nickname, req.RoleID, req.ModuleID)
-	if err != nil {
-		log.WarnContext(c.Request.Context(), "create user failed", "username", req.Username, "err", err)
-		utils.Conflict(c, err.Error())
-		return
-	}
-	log.InfoContext(c.Request.Context(), "user created", "user_id", user.ID, "username", user.Username)
-	utils.Success(c, user.ToResponse())
+func (c *UserController) Create() (gin.HandlerFunc, error) {
+	return func(ctx *gin.Context) {
+		var req struct {
+			Username string `json:"username" binding:"required,min=3,max=32"`
+			Email    string `json:"email" binding:"required,email"`
+			Password string `json:"password" binding:"required,min=6,max=32"`
+			Nickname string `json:"nickname"`
+			RoleID   uint   `json:"role_id" binding:"required"`
+			ModuleID *uint  `json:"module_id"`
+		}
+		if err := ctx.ShouldBindJSON(&req); err != nil {
+			log.WarnContext(ctx.Request.Context(), "create user request validation failed", "err", err)
+			utils.BadRequest(ctx, err.Error())
+			return
+		}
+		user, err := c.svc.Create(req.Username, req.Email, req.Password, req.Nickname, req.RoleID, req.ModuleID)
+		if err != nil {
+			log.WarnContext(ctx.Request.Context(), "create user failed", "username", req.Username, "err", err)
+			utils.Conflict(ctx, err.Error())
+			return
+		}
+		log.InfoContext(ctx.Request.Context(), "user created", "user_id", user.ID, "username", user.Username)
+		utils.Success(ctx, user.ToResponse())
+	}, nil
 }
 
-func (h *UserHandler) Update(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		utils.BadRequest(c, "invalid id")
-		return
-	}
-	var req struct {
-		Nickname string `json:"nickname"`
-		RoleID   uint   `json:"role_id"`
-		ModuleID *uint  `json:"module_id"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.WarnContext(c.Request.Context(), "update user request validation failed", "id", id, "err", err)
-		utils.BadRequest(c, err.Error())
-		return
-	}
-	user, err := h.userService.Update(uint(id), req.Nickname, req.RoleID, req.ModuleID)
-	if err != nil {
-		log.WarnContext(c.Request.Context(), "update user failed", "id", id, "err", err)
-		utils.NotFound(c, err.Error())
-		return
-	}
-	log.InfoContext(c.Request.Context(), "user updated", "user_id", user.ID)
-	utils.Success(c, user.ToResponse())
+func (c *UserController) Update() (gin.HandlerFunc, error) {
+	return func(ctx *gin.Context) {
+		id, err := strconv.ParseUint(ctx.Param("id"), 10, 32)
+		if err != nil {
+			utils.BadRequest(ctx, "invalid id")
+			return
+		}
+		var req struct {
+			Nickname string `json:"nickname"`
+			RoleID   uint   `json:"role_id"`
+			ModuleID *uint  `json:"module_id"`
+		}
+		if err := ctx.ShouldBindJSON(&req); err != nil {
+			log.WarnContext(ctx.Request.Context(), "update user request validation failed", "id", id, "err", err)
+			utils.BadRequest(ctx, err.Error())
+			return
+		}
+		user, err := c.svc.Update(uint(id), req.Nickname, req.RoleID, req.ModuleID)
+		if err != nil {
+			log.WarnContext(ctx.Request.Context(), "update user failed", "id", id, "err", err)
+			utils.NotFound(ctx, err.Error())
+			return
+		}
+		log.InfoContext(ctx.Request.Context(), "user updated", "user_id", user.ID)
+		utils.Success(ctx, user.ToResponse())
+	}, nil
 }
 
-func (h *UserHandler) Delete(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		utils.BadRequest(c, "invalid id")
-		return
-	}
-	if err := h.userService.Delete(uint(id)); err != nil {
-		log.WarnContext(c.Request.Context(), "delete user failed", "id", id, "err", err)
-		utils.Forbidden(c, err.Error())
-		return
-	}
-	log.InfoContext(c.Request.Context(), "user deleted", "user_id", id)
-	utils.SuccessWithMessage(c, "deleted", nil)
+func (c *UserController) Delete() (gin.HandlerFunc, error) {
+	return func(ctx *gin.Context) {
+		id, err := strconv.ParseUint(ctx.Param("id"), 10, 32)
+		if err != nil {
+			utils.BadRequest(ctx, "invalid id")
+			return
+		}
+		if err := c.svc.Delete(uint(id)); err != nil {
+			log.WarnContext(ctx.Request.Context(), "delete user failed", "id", id, "err", err)
+			if errors.Is(err, errors.New("cannot delete the last admin")) {
+				utils.Forbidden(ctx, err.Error())
+			} else {
+				utils.NotFound(ctx, err.Error())
+			}
+			return
+		}
+		log.InfoContext(ctx.Request.Context(), "user deleted", "user_id", id)
+		utils.SuccessWithMessage(ctx, "deleted", nil)
+	}, nil
+}
+
+func (c *UserController) Patch() (gin.HandlerFunc, error) {
+	return nil, errors.New("patch not implemented")
 }

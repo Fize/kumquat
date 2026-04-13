@@ -1,9 +1,14 @@
 server:
   bindAddr: ":8080"
   metrics:
-    enabled: false
+    enabled: true
+    serviceName: portal
+    path: /metrics
+    port: 9090
   trace:
-    enabled: false
+    enabled: true
+    serviceName: portal
+    stdout: true
 
 sql:
   type: sqlite3

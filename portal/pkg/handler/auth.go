@@ -8,18 +8,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AuthHandler 认证处理器
-type AuthHandler struct {
+// AuthController 认证控制器（手动路由注册，不使用 RestfulAPI）
+type AuthController struct {
 	authService *service.AuthService
 }
 
-// NewAuthHandler 创建认证处理器
-func NewAuthHandler(authService *service.AuthService) *AuthHandler {
-	return &AuthHandler{authService: authService}
+// NewAuthController 创建认证控制器
+func NewAuthController(authService *service.AuthService) *AuthController {
+	return &AuthController{authService: authService}
 }
 
-// SetupRoutes 注册路由
-func (h *AuthHandler) SetupRoutes(api *gin.RouterGroup) {
+// SetupRoutes 注册 auth 路由（手动，不走 RestfulAPI）
+func (h *AuthController) SetupRoutes(api *gin.RouterGroup) {
 	auth := api.Group("/auth")
 	{
 		auth.POST("/login", h.Login)
@@ -34,7 +34,7 @@ func (h *AuthHandler) SetupRoutes(api *gin.RouterGroup) {
 }
 
 // Login 登录
-func (h *AuthHandler) Login(c *gin.Context) {
+func (h *AuthController) Login(c *gin.Context) {
 	var req struct {
 		Username string `json:"username" binding:"required"`
 		Password string `json:"password" binding:"required"`
@@ -55,7 +55,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 }
 
 // DoRegister 用户注册
-func (h *AuthHandler) DoRegister(c *gin.Context) {
+func (h *AuthController) DoRegister(c *gin.Context) {
 	var req struct {
 		Username string `json:"username" binding:"required,min=3,max=32"`
 		Email    string `json:"email" binding:"required,email"`
@@ -78,7 +78,7 @@ func (h *AuthHandler) DoRegister(c *gin.Context) {
 }
 
 // Me 获取当前用户
-func (h *AuthHandler) Me(c *gin.Context) {
+func (h *AuthController) Me(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	user, err := h.authService.GetUserByID(userID)
 	if err != nil {
@@ -90,7 +90,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 }
 
 // ChangePassword 修改密码
-func (h *AuthHandler) ChangePassword(c *gin.Context) {
+func (h *AuthController) ChangePassword(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	var req struct {
 		OldPassword string `json:"oldPassword" binding:"required"`

@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"errors"
 	"strconv"
 
+	"github.com/fize/go-ext/ginserver"
 	"github.com/fize/go-ext/log"
 	"github.com/fize/kumquat/portal/pkg/middleware"
 	"github.com/fize/kumquat/portal/pkg/service"
@@ -10,132 +12,133 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ModuleHandler 模块处理器
-type ModuleHandler struct {
-	moduleService *service.ModuleService
-	roleService   *service.RoleService
+// ModuleController 模块控制器，实现 RestController 接口
+type ModuleController struct {
+	svc *service.ModuleService
+	rs  *service.RoleService
 }
 
-// NewModuleHandler 创建模块处理器
-func NewModuleHandler(moduleService *service.ModuleService, roleService *service.RoleService) *ModuleHandler {
-	return &ModuleHandler{moduleService: moduleService, roleService: roleService}
+// NewModuleController 创建模块控制器
+func NewModuleController(moduleSvc *service.ModuleService, roleSvc *service.RoleService) *ModuleController {
+	return &ModuleController{svc: moduleSvc, rs: roleSvc}
 }
 
-// SetupRoutes 注册路由
-func (h *ModuleHandler) SetupRoutes(api *gin.RouterGroup) {
-	modules := api.Group("/modules")
-	modules.Use(middleware.Auth())
-	{
-		modules.GET("", middleware.RequirePermission(h.roleService, "module", "read"), h.List)
-		modules.GET("/:id", middleware.RequirePermission(h.roleService, "module", "read"), h.Get)
-		modules.GET("/:id/children", middleware.RequirePermission(h.roleService, "module", "read"), h.GetChildren)
-		modules.POST("", middleware.RequireRole("admin"), h.Create)
-		modules.PUT("/:id", middleware.RequireRole("admin"), h.Update)
-		modules.DELETE("/:id", middleware.RequireRole("admin"), h.Delete)
+func (c *ModuleController) Name() string { return "modules" }
+func (c *ModuleController) Version() string { return "v1" }
+
+func (c *ModuleController) Middlewares() []ginserver.MiddlewaresObject {
+	return []ginserver.MiddlewaresObject{
+		{
+			Methods:     []string{"GET"},
+			Middlewares: []gin.HandlerFunc{middleware.Auth(), middleware.RequirePermission(c.rs, "module", "read")},
+		},
+		{
+			Methods:     []string{"POST", "PUT", "DELETE"},
+			Middlewares: []gin.HandlerFunc{middleware.Auth(), middleware.RequireRole("admin")},
+		},
 	}
 }
 
-func (h *ModuleHandler) List(c *gin.Context) {
-	modules, err := h.moduleService.List()
-	if err != nil {
-		log.ErrorContext(c.Request.Context(), "list modules failed", "err", err)
-		utils.InternalError(c, err.Error())
-		return
-	}
-	list := make([]map[string]interface{}, len(modules))
-	for i, m := range modules {
-		list[i] = m.ToResponse()
-	}
-	utils.Success(c, list)
+func (c *ModuleController) List() (gin.HandlerFunc, error) {
+	return func(ctx *gin.Context) {
+		modules, err := c.svc.List()
+		if err != nil {
+			log.ErrorContext(ctx.Request.Context(), "list modules failed", "err", err)
+			utils.InternalError(ctx, err.Error())
+			return
+		}
+		list := make([]map[string]interface{}, len(modules))
+		for i, m := range modules {
+			list[i] = m.ToResponse()
+		}
+		utils.Success(ctx, list)
+	}, nil
 }
 
-func (h *ModuleHandler) Get(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		utils.BadRequest(c, "invalid id")
-		return
-	}
-	module, err := h.moduleService.GetByID(uint(id))
-	if err != nil {
-		log.WarnContext(c.Request.Context(), "get module failed", "id", id, "err", err)
-		utils.NotFound(c, "module not found")
-		return
-	}
-	utils.Success(c, module.ToResponse())
+func (c *ModuleController) Get() (gin.HandlerFunc, error) {
+	return func(ctx *gin.Context) {
+		id, err := strconv.ParseUint(ctx.Param("id"), 10, 32)
+		if err != nil {
+			utils.BadRequest(ctx, "invalid id")
+			return
+		}
+		module, err := c.svc.GetByID(uint(id))
+		if err != nil {
+			log.WarnContext(ctx.Request.Context(), "get module failed", "id", id, "err", err)
+			utils.NotFound(ctx, "module not found")
+			return
+		}
+		utils.Success(ctx, module.ToResponse())
+	}, nil
 }
 
-func (h *ModuleHandler) GetChildren(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		utils.BadRequest(c, "invalid id")
-		return
-	}
-	module, err := h.moduleService.GetByID(uint(id))
-	if err != nil {
-		log.WarnContext(c.Request.Context(), "get module children failed", "id", id, "err", err)
-		utils.NotFound(c, "module not found")
-		return
-	}
-	utils.Success(c, module.Children)
+func (c *ModuleController) Create() (gin.HandlerFunc, error) {
+	return func(ctx *gin.Context) {
+		var req struct {
+			Name     string `json:"name" binding:"required"`
+			ParentID *uint  `json:"parent_id"`
+			Sort     int    `json:"sort"`
+		}
+		if err := ctx.ShouldBindJSON(&req); err != nil {
+			log.WarnContext(ctx.Request.Context(), "create module request validation failed", "err", err)
+			utils.BadRequest(ctx, err.Error())
+			return
+		}
+		module, err := c.svc.Create(req.Name, req.ParentID, req.Sort)
+		if err != nil {
+			log.WarnContext(ctx.Request.Context(), "create module failed", "name", req.Name, "err", err)
+			utils.Conflict(ctx, err.Error())
+			return
+		}
+		log.InfoContext(ctx.Request.Context(), "module created", "module_id", module.ID, "name", module.Name)
+		utils.Success(ctx, module.ToResponse())
+	}, nil
 }
 
-func (h *ModuleHandler) Create(c *gin.Context) {
-	var req struct {
-		Name     string `json:"name" binding:"required"`
-		ParentID *uint  `json:"parent_id"`
-		Sort     int    `json:"sort"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.WarnContext(c.Request.Context(), "create module request validation failed", "err", err)
-		utils.BadRequest(c, err.Error())
-		return
-	}
-	module, err := h.moduleService.Create(req.Name, req.ParentID, req.Sort)
-	if err != nil {
-		log.WarnContext(c.Request.Context(), "create module failed", "name", req.Name, "err", err)
-		utils.Conflict(c, err.Error())
-		return
-	}
-	log.InfoContext(c.Request.Context(), "module created", "module_id", module.ID, "name", module.Name)
-	utils.Success(c, module.ToResponse())
+func (c *ModuleController) Update() (gin.HandlerFunc, error) {
+	return func(ctx *gin.Context) {
+		id, err := strconv.ParseUint(ctx.Param("id"), 10, 32)
+		if err != nil {
+			utils.BadRequest(ctx, "invalid id")
+			return
+		}
+		var req struct {
+			Name string `json:"name"`
+			Sort int    `json:"sort"`
+		}
+		if err := ctx.ShouldBindJSON(&req); err != nil {
+			log.WarnContext(ctx.Request.Context(), "update module request validation failed", "id", id, "err", err)
+			utils.BadRequest(ctx, err.Error())
+			return
+		}
+		module, err := c.svc.Update(uint(id), req.Name, req.Sort)
+		if err != nil {
+			log.WarnContext(ctx.Request.Context(), "update module failed", "id", id, "err", err)
+			utils.NotFound(ctx, err.Error())
+			return
+		}
+		log.InfoContext(ctx.Request.Context(), "module updated", "module_id", module.ID)
+		utils.Success(ctx, module.ToResponse())
+	}, nil
 }
 
-func (h *ModuleHandler) Update(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		utils.BadRequest(c, "invalid id")
-		return
-	}
-	var req struct {
-		Name string `json:"name"`
-		Sort int    `json:"sort"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.WarnContext(c.Request.Context(), "update module request validation failed", "id", id, "err", err)
-		utils.BadRequest(c, err.Error())
-		return
-	}
-	module, err := h.moduleService.Update(uint(id), req.Name, req.Sort)
-	if err != nil {
-		log.WarnContext(c.Request.Context(), "update module failed", "id", id, "err", err)
-		utils.NotFound(c, err.Error())
-		return
-	}
-	log.InfoContext(c.Request.Context(), "module updated", "module_id", module.ID)
-	utils.Success(c, module.ToResponse())
+func (c *ModuleController) Delete() (gin.HandlerFunc, error) {
+	return func(ctx *gin.Context) {
+		id, err := strconv.ParseUint(ctx.Param("id"), 10, 32)
+		if err != nil {
+			utils.BadRequest(ctx, "invalid id")
+			return
+		}
+		if err := c.svc.Delete(uint(id)); err != nil {
+			log.WarnContext(ctx.Request.Context(), "delete module failed", "id", id, "err", err)
+			utils.Conflict(ctx, err.Error())
+			return
+		}
+		log.InfoContext(ctx.Request.Context(), "module deleted", "module_id", id)
+		utils.SuccessWithMessage(ctx, "deleted", nil)
+	}, nil
 }
 
-func (h *ModuleHandler) Delete(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		utils.BadRequest(c, "invalid id")
-		return
-	}
-	if err := h.moduleService.Delete(uint(id)); err != nil {
-		log.WarnContext(c.Request.Context(), "delete module failed", "id", id, "err", err)
-		utils.Conflict(c, err.Error())
-		return
-	}
-	log.InfoContext(c.Request.Context(), "module deleted", "module_id", id)
-	utils.SuccessWithMessage(c, "deleted", nil)
+func (c *ModuleController) Patch() (gin.HandlerFunc, error) {
+	return nil, errors.New("patch not implemented")
 }
