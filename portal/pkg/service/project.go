@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/fize/go-ext/log"
+	apperr "github.com/fize/kumquat/portal/pkg/errors"
 	"github.com/fize/kumquat/portal/pkg/model"
 	"gorm.io/gorm"
 )
@@ -26,7 +27,7 @@ func (s *ProjectService) List(ctx context.Context, page, size int) ([]model.Proj
 
 	if err := s.db.Model(&model.Project{}).Count(&total).Error; err != nil {
 		log.ErrorContext(ctx, "list projects failed: count error", "err", err)
-		return nil, 0, err
+		return nil, 0, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	if err := s.db.Preload("Module").
@@ -34,7 +35,7 @@ func (s *ProjectService) List(ctx context.Context, page, size int) ([]model.Proj
 		Order("created_at desc").
 		Find(&projects).Error; err != nil {
 		log.ErrorContext(ctx, "list projects failed: query error", "err", err)
-		return nil, 0, err
+		return nil, 0, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	return projects, total, nil
@@ -44,7 +45,10 @@ func (s *ProjectService) List(ctx context.Context, page, size int) ([]model.Proj
 func (s *ProjectService) GetByID(ctx context.Context, id uint) (*model.Project, error) {
 	var project model.Project
 	if err := s.db.Preload("Module").First(&project, id).Error; err != nil {
-		return nil, err
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperr.New(apperr.CodeProjectNotFound, "")
+		}
+		return nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 	return &project, nil
 }
@@ -54,7 +58,7 @@ func (s *ProjectService) Create(ctx context.Context, name string, moduleID uint,
 	var module model.Module
 	if err := s.db.First(&module, moduleID).Error; err != nil {
 		log.WarnContext(ctx, "create project failed: module not found", "module_id", moduleID)
-		return nil, errors.New("module not found")
+		return nil, apperr.New(apperr.CodeModuleNotFound, "")
 	}
 
 	project := model.Project{
@@ -65,7 +69,7 @@ func (s *ProjectService) Create(ctx context.Context, name string, moduleID uint,
 
 	if err := s.db.Create(&project).Error; err != nil {
 		log.ErrorContext(ctx, "create project failed: db error", "err", err, "name", name)
-		return nil, err
+		return nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	project.Module = module
@@ -78,7 +82,7 @@ func (s *ProjectService) Update(ctx context.Context, id uint, name string, confi
 	project, err := s.GetByID(ctx, id)
 	if err != nil {
 		log.WarnContext(ctx, "update project failed: not found", "project_id", id)
-		return nil, errors.New("project not found")
+		return nil, err
 	}
 
 	updates := map[string]interface{}{}
@@ -91,7 +95,7 @@ func (s *ProjectService) Update(ctx context.Context, id uint, name string, confi
 
 	if err := s.db.Model(project).Updates(updates).Error; err != nil {
 		log.ErrorContext(ctx, "update project failed: db error", "err", err, "project_id", id)
-		return nil, err
+		return nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	log.InfoContext(ctx, "project updated", "project_id", id)
@@ -103,12 +107,12 @@ func (s *ProjectService) Delete(ctx context.Context, id uint) error {
 	project, err := s.GetByID(ctx, id)
 	if err != nil {
 		log.WarnContext(ctx, "delete project failed: not found", "project_id", id)
-		return errors.New("project not found")
+		return err
 	}
 
 	if err := s.db.Delete(project).Error; err != nil {
 		log.ErrorContext(ctx, "delete project failed: db error", "err", err, "project_id", id)
-		return err
+		return apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	log.InfoContext(ctx, "project deleted", "project_id", id, "name", project.Name)
@@ -123,14 +127,14 @@ func (s *ProjectService) ListByModule(ctx context.Context, moduleID uint, page, 
 	query := s.db.Model(&model.Project{}).Where("module_id = ?", moduleID)
 	if err := query.Count(&total).Error; err != nil {
 		log.ErrorContext(ctx, "list projects by module failed: count error", "err", err, "module_id", moduleID)
-		return nil, 0, err
+		return nil, 0, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	if err := query.Preload("Module").
 		Offset((page-1)*size).Limit(size).
 		Find(&projects).Error; err != nil {
 		log.ErrorContext(ctx, "list projects by module failed: query error", "err", err, "module_id", moduleID)
-		return nil, 0, err
+		return nil, 0, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	return projects, total, nil

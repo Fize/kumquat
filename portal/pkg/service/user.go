@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/fize/go-ext/log"
+	apperr "github.com/fize/kumquat/portal/pkg/errors"
 	"github.com/fize/kumquat/portal/pkg/model"
 	"gorm.io/gorm"
 )
@@ -27,14 +28,14 @@ func (s *UserService) List(ctx context.Context, page, size int) ([]model.User, i
 
 	if err := s.db.Model(&model.User{}).Count(&total).Error; err != nil {
 		log.ErrorContext(ctx, "list users failed: count error", "err", err)
-		return nil, 0, err
+		return nil, 0, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	if err := s.db.Preload("Role").Preload("Module").
 		Offset((page - 1) * size).Limit(size).
 		Find(&users).Error; err != nil {
 		log.ErrorContext(ctx, "list users failed: query error", "err", err)
-		return nil, 0, err
+		return nil, 0, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	return users, total, nil
@@ -44,7 +45,10 @@ func (s *UserService) List(ctx context.Context, page, size int) ([]model.User, i
 func (s *UserService) GetByID(ctx context.Context, id uint) (*model.User, error) {
 	var user model.User
 	if err := s.db.Preload("Role").Preload("Module").First(&user, id).Error; err != nil {
-		return nil, err
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperr.New(apperr.CodeUserNotFound, "")
+		}
+		return nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 	return &user, nil
 }
@@ -55,26 +59,26 @@ func (s *UserService) Create(ctx context.Context, username, email, password, nic
 	s.db.Model(&model.User{}).Where("username = ?", username).Count(&count)
 	if count > 0 {
 		log.WarnContext(ctx, "create user failed: username exists", "username", username)
-		return nil, errors.New("username already exists")
+		return nil, apperr.New(apperr.CodeUsernameExists, "")
 	}
 
 	s.db.Model(&model.User{}).Where("email = ?", email).Count(&count)
 	if count > 0 {
 		log.WarnContext(ctx, "create user failed: email exists", "email", email)
-		return nil, errors.New("email already exists")
+		return nil, apperr.New(apperr.CodeEmailExists, "")
 	}
 
 	var role model.Role
 	if err := s.db.First(&role, roleID).Error; err != nil {
 		log.WarnContext(ctx, "create user failed: role not found", "role_id", roleID)
-		return nil, errors.New("role not found")
+		return nil, apperr.New(apperr.CodeRoleNotFound, "")
 	}
 
 	if moduleID != nil {
 		var module model.Module
 		if err := s.db.First(&module, *moduleID).Error; err != nil {
 			log.WarnContext(ctx, "create user failed: module not found", "module_id", *moduleID)
-			return nil, errors.New("module not found")
+			return nil, apperr.New(apperr.CodeModuleNotFound, "")
 		}
 	}
 
@@ -89,7 +93,7 @@ func (s *UserService) Create(ctx context.Context, username, email, password, nic
 
 	if err := s.db.Create(&user).Error; err != nil {
 		log.ErrorContext(ctx, "create user failed: db error", "err", err, "username", username)
-		return nil, err
+		return nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	user.Role = role
@@ -102,7 +106,7 @@ func (s *UserService) Update(ctx context.Context, id uint, nickname string, role
 	var user model.User
 	if err := s.db.First(&user, id).Error; err != nil {
 		log.WarnContext(ctx, "update user failed: not found", "user_id", id)
-		return nil, errors.New("user not found")
+		return nil, apperr.New(apperr.CodeUserNotFound, "")
 	}
 
 	updates := map[string]interface{}{}
@@ -113,7 +117,7 @@ func (s *UserService) Update(ctx context.Context, id uint, nickname string, role
 		var role model.Role
 		if err := s.db.First(&role, roleID).Error; err != nil {
 			log.WarnContext(ctx, "update user failed: role not found", "role_id", roleID)
-			return nil, errors.New("role not found")
+			return nil, apperr.New(apperr.CodeRoleNotFound, "")
 		}
 		updates["role_id"] = roleID
 	}
@@ -121,14 +125,14 @@ func (s *UserService) Update(ctx context.Context, id uint, nickname string, role
 		var module model.Module
 		if err := s.db.First(&module, *moduleID).Error; err != nil {
 			log.WarnContext(ctx, "update user failed: module not found", "module_id", *moduleID)
-			return nil, errors.New("module not found")
+			return nil, apperr.New(apperr.CodeModuleNotFound, "")
 		}
 		updates["module_id"] = *moduleID
 	}
 
 	if err := s.db.Model(&user).Updates(updates).Error; err != nil {
 		log.ErrorContext(ctx, "update user failed: db error", "err", err, "user_id", id)
-		return nil, err
+		return nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	log.InfoContext(ctx, "user updated", "user_id", id, "username", user.Username, "updates", fmt.Sprintf("%v", updates))
@@ -140,7 +144,7 @@ func (s *UserService) Delete(ctx context.Context, id uint) error {
 	var user model.User
 	if err := s.db.First(&user, id).Error; err != nil {
 		log.WarnContext(ctx, "delete user failed: not found", "user_id", id)
-		return errors.New("user not found")
+		return apperr.New(apperr.CodeUserNotFound, "")
 	}
 
 	if user.RoleID == 1 {
@@ -148,13 +152,13 @@ func (s *UserService) Delete(ctx context.Context, id uint) error {
 		s.db.Model(&model.User{}).Where("role_id = ?", 1).Count(&count)
 		if count <= 1 {
 			log.WarnContext(ctx, "delete user failed: cannot delete last admin", "user_id", id)
-			return errors.New("cannot delete the last admin")
+			return apperr.New(apperr.CodeLastAdmin, "")
 		}
 	}
 
 	if err := s.db.Delete(&user).Error; err != nil {
 		log.ErrorContext(ctx, "delete user failed: db error", "err", err, "user_id", id)
-		return err
+		return apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	log.InfoContext(ctx, "user deleted", "user_id", id, "username", user.Username)
@@ -174,14 +178,14 @@ func (s *UserService) Search(ctx context.Context, keyword string, page, size int
 
 	if err := query.Count(&total).Error; err != nil {
 		log.ErrorContext(ctx, "search users failed: count error", "err", err, "keyword", keyword)
-		return nil, 0, err
+		return nil, 0, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	if err := query.Preload("Role").Preload("Module").
 		Offset((page - 1) * size).Limit(size).
 		Find(&users).Error; err != nil {
 		log.ErrorContext(ctx, "search users failed: query error", "err", err, "keyword", keyword)
-		return nil, 0, err
+		return nil, 0, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	return users, total, nil

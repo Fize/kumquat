@@ -1,6 +1,7 @@
 package utils
 
 import (
+	apperr "github.com/fize/kumquat/portal/pkg/errors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -32,6 +33,33 @@ func SuccessWithMessage(c *gin.Context, message string, data interface{}) {
 // Error 错误响应
 func Error(c *gin.Context, httpCode int, code int, message string) {
 	c.JSON(httpCode, Response{Code: code, Message: message})
+}
+
+// ErrorFromAppError 从 AppError 生成错误响应
+func ErrorFromAppError(c *gin.Context, err *apperr.AppError) {
+	c.JSON(err.HTTPStatus(), Response{Code: err.Code, Message: err.Message})
+}
+
+// ErrorFromErr 从 error 生成错误响应
+func ErrorFromErr(c *gin.Context, err error) {
+	if appErr, ok := apperr.AsAppError(err); ok {
+		ErrorFromAppError(c, appErr)
+		return
+	}
+	// 兜底：普通错误
+	msg := err.Error()
+	switch {
+	case containsAny(msg, "not found"):
+		NotFound(c, msg)
+	case containsAny(msg, "already exists"):
+		Conflict(c, msg)
+	case containsAny(msg, "cannot delete", "insufficient", "not allowed"):
+		Forbidden(c, msg)
+	case containsAny(msg, "invalid", "incorrect", "required"):
+		BadRequest(c, msg)
+	default:
+		BadRequest(c, msg)
+	}
 }
 
 // BadRequest 400
@@ -82,6 +110,7 @@ func PageSuccess(c *gin.Context, total int64, page, size int, list interface{}) 
 }
 
 // ErrorFromMessage 根据错误消息自动选择合适的 HTTP 状态码
+// Deprecated: 使用 ErrorFromErr 代替
 func ErrorFromMessage(c *gin.Context, msg string) {
 	switch {
 	case containsAny(msg, "not found"):
