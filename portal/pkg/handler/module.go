@@ -13,11 +13,12 @@ import (
 // ModuleHandler 模块处理器
 type ModuleHandler struct {
 	moduleService *service.ModuleService
+	roleService   *service.RoleService
 }
 
 // NewModuleHandler 创建模块处理器
-func NewModuleHandler(moduleService *service.ModuleService) *ModuleHandler {
-	return &ModuleHandler{moduleService: moduleService}
+func NewModuleHandler(moduleService *service.ModuleService, roleService *service.RoleService) *ModuleHandler {
+	return &ModuleHandler{moduleService: moduleService, roleService: roleService}
 }
 
 // SetupRoutes 注册路由
@@ -25,9 +26,9 @@ func (h *ModuleHandler) SetupRoutes(api *gin.RouterGroup) {
 	modules := api.Group("/modules")
 	modules.Use(middleware.Auth())
 	{
-		modules.GET("", h.List)
-		modules.GET("/:id", h.Get)
-		modules.GET("/:id/children", h.GetChildren)
+		modules.GET("", middleware.RequirePermission(h.roleService, "module", "read"), h.List)
+		modules.GET("/:id", middleware.RequirePermission(h.roleService, "module", "read"), h.Get)
+		modules.GET("/:id/children", middleware.RequirePermission(h.roleService, "module", "read"), h.GetChildren)
 		modules.POST("", middleware.RequireRole("admin"), h.Create)
 		modules.PUT("/:id", middleware.RequireRole("admin"), h.Update)
 		modules.DELETE("/:id", middleware.RequireRole("admin"), h.Delete)
