@@ -1,6 +1,8 @@
 package model
 
 import (
+	"strings"
+
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -25,7 +27,17 @@ func (User) TableName() string {
 
 // BeforeCreate 创建前自动加密密码
 func (u *User) BeforeCreate(tx *gorm.DB) error {
-	if u.Password != "" {
+	return u.hashPasswordIfNeeded()
+}
+
+// BeforeUpdate 更新前自动加密密码（如果密码被修改）
+func (u *User) BeforeUpdate(tx *gorm.DB) error {
+	return u.hashPasswordIfNeeded()
+}
+
+// hashPasswordIfNeeded 如果密码非空且不是 bcrypt 哈希格式，则加密
+func (u *User) hashPasswordIfNeeded() error {
+	if u.Password != "" && !strings.HasPrefix(u.Password, "$2a$") {
 		hashed, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
 		if err != nil {
 			return err

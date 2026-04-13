@@ -14,13 +14,14 @@ import (
 
 // ProjectController 项目控制器，实现 RestController 接口
 type ProjectController struct {
-	svc *service.ProjectService
-	rs  *service.RoleService
+	svc           *service.ProjectService
+	rs            *service.RoleService
+	authMiddleware *middleware.AuthMiddleware
 }
 
 // NewProjectController 创建项目控制器
-func NewProjectController(projectSvc *service.ProjectService, roleSvc *service.RoleService) *ProjectController {
-	return &ProjectController{svc: projectSvc, rs: roleSvc}
+func NewProjectController(projectSvc *service.ProjectService, roleSvc *service.RoleService, authMiddleware *middleware.AuthMiddleware) *ProjectController {
+	return &ProjectController{svc: projectSvc, rs: roleSvc, authMiddleware: authMiddleware}
 }
 
 func (c *ProjectController) Name() string { return "projects" }
@@ -30,11 +31,11 @@ func (c *ProjectController) Middlewares() []ginserver.MiddlewaresObject {
 	return []ginserver.MiddlewaresObject{
 		{
 			Methods:     []string{"GET"},
-			Middlewares: []gin.HandlerFunc{middleware.Auth(), middleware.RequirePermission(c.rs, "project", "read")},
+			Middlewares: []gin.HandlerFunc{c.authMiddleware.Auth(), middleware.RequirePermission(c.rs, "project", "read")},
 		},
 		{
 			Methods:     []string{"POST", "PUT", "DELETE"},
-			Middlewares: []gin.HandlerFunc{middleware.Auth(), middleware.RequireRole("admin")},
+			Middlewares: []gin.HandlerFunc{c.authMiddleware.Auth(), middleware.RequireRole("admin")},
 		},
 	}
 }

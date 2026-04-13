@@ -14,13 +14,14 @@ import (
 
 // UserController 用户控制器，实现 RestController 接口
 type UserController struct {
-	svc *service.UserService
-	rs  *service.RoleService
+	svc           *service.UserService
+	rs            *service.RoleService
+	authMiddleware *middleware.AuthMiddleware
 }
 
 // NewUserController 创建用户控制器
-func NewUserController(userSvc *service.UserService, roleSvc *service.RoleService) *UserController {
-	return &UserController{svc: userSvc, rs: roleSvc}
+func NewUserController(userSvc *service.UserService, roleSvc *service.RoleService, authMiddleware *middleware.AuthMiddleware) *UserController {
+	return &UserController{svc: userSvc, rs: roleSvc, authMiddleware: authMiddleware}
 }
 
 func (c *UserController) Name() string { return "users" }
@@ -30,11 +31,11 @@ func (c *UserController) Middlewares() []ginserver.MiddlewaresObject {
 	return []ginserver.MiddlewaresObject{
 		{
 			Methods:     []string{"GET"},
-			Middlewares: []gin.HandlerFunc{middleware.Auth(), middleware.RequirePermission(c.rs, "user", "read")},
+			Middlewares: []gin.HandlerFunc{c.authMiddleware.Auth(), middleware.RequirePermission(c.rs, "user", "read")},
 		},
 		{
 			Methods:     []string{"POST", "DELETE", "PUT"},
-			Middlewares: []gin.HandlerFunc{middleware.Auth(), middleware.RequireRole("admin")},
+			Middlewares: []gin.HandlerFunc{c.authMiddleware.Auth(), middleware.RequireRole("admin")},
 		},
 	}
 }

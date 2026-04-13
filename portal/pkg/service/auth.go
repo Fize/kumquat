@@ -6,18 +6,18 @@ import (
 
 	"github.com/fize/go-ext/log"
 	"github.com/fize/kumquat/portal/pkg/model"
-	"github.com/fize/kumquat/portal/pkg/utils"
 	"gorm.io/gorm"
 )
 
 // AuthService 认证服务
 type AuthService struct {
-	db *gorm.DB
+	db         *gorm.DB
+	jwtService *JWTService
 }
 
 // NewAuthService 创建认证服务
-func NewAuthService(db *gorm.DB) *AuthService {
-	return &AuthService{db: db}
+func NewAuthService(db *gorm.DB, jwtService *JWTService) *AuthService {
+	return &AuthService{db: db, jwtService: jwtService}
 }
 
 // Login 用户登录
@@ -42,7 +42,7 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (str
 		return "", nil, err
 	}
 
-	token, err := utils.GenerateToken(user.ID, user.Username, user.RoleID, user.Role.Name)
+	token, err := s.jwtService.GenerateToken(user.ID, user.Username, user.RoleID, user.Role.Name)
 	if err != nil {
 		log.ErrorContext(ctx, "login failed: generate token error", "err", err, "user_id", user.ID)
 		return "", nil, err
@@ -104,8 +104,8 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID uint, oldPasswo
 		return errors.New("incorrect old password")
 	}
 
-	user.SetPassword(newPassword)
-	if err := s.db.Model(&user).Update("password", user.Password).Error; err != nil {
+	user.Password = newPassword
+	if err := s.db.Save(&user).Error; err != nil {
 		log.ErrorContext(ctx, "change password failed: db error", "err", err, "user_id", userID)
 		return err
 	}
