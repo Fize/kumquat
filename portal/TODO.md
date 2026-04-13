@@ -21,16 +21,21 @@
 - [ ] 改造 handler 返回统一错误格式
 - [ ] 添加全局错误恢复中间件
 
+### 4. Metrics 监控
+- [x] Prometheus Metrics（ginserver NewMetricsCollector，:9090/metrics）
+- [x] HTTP QPS/延迟/错误率指标自动采集
+- [ ] 与 Grafana 集成
+
 ## 中优先级
 
-### 4. 配置优化
+### 5. 配置优化
 - [ ] 支持环境变量 ${VAR} 形式配置
 - [ ] 分离 config.yaml 为多个环境配置
 
 ### 5. 链路追踪
-- [ ] 中间件添加 X-Trace-ID 支持（注：go-ext ginserver 已自动注册 TraceID 中间件）
-- [ ] 日志携带 trace_id 字段（注：ginserver 自动处理）
-- [ ] 集成 OpenTelemetry（可选）
+- [x] X-Trace-ID 支持（ginserver TraceID 中间件自动注册）
+- [x] 日志携带 trace_id 字段（ginserver GinLogger 自动处理）
+- [x] OpenTelemetry Trace（ginserver 自动集成，stdout 或 OTLP）
 
 ### 6. API 文档
 - [ ] 添加 Swagger 注解
@@ -64,6 +69,9 @@
 - [x] 自定义 ACL 权限（Permission 表替代 Casbin）
 - [x] 树形模块管理
 - [x] 统一响应格式
+- [x] Prometheus Metrics 监控（ginserver 自动集成，:9090/metrics）
+- [x] OpenTelemetry Trace（ginserver 自动集成，stdout 输出）
+- [x] RestfulAPI.Install() 声明式 REST 路由注册
 
 ## ACL 权限扩展说明
 

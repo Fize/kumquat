@@ -3,6 +3,7 @@ package handler
 import (
 	"strconv"
 
+	"github.com/fize/go-ext/ginserver"
 	"github.com/fize/go-ext/log"
 	"github.com/fize/kumquat/portal/pkg/middleware"
 	"github.com/fize/kumquat/portal/pkg/service"
@@ -10,67 +11,62 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RoleHandler 角色处理器
-type RoleHandler struct {
-	roleService *service.RoleService
+// RoleController 角色控制器，实现 RestController 接口
+type RoleController struct {
+	svc *service.RoleService
 }
 
-// NewRoleHandler 创建角色处理器
-func NewRoleHandler(roleService *service.RoleService) *RoleHandler {
-	return &RoleHandler{roleService: roleService}
+// NewRoleController 创建角色控制器
+func NewRoleController(roleSvc *service.RoleService) *RoleController {
+	return &RoleController{svc: roleSvc}
 }
 
-// SetupRoutes 注册路由
-func (h *RoleHandler) SetupRoutes(api *gin.RouterGroup) {
-	roles := api.Group("/roles")
-	roles.Use(middleware.Auth())
-	{
-		roles.GET("", middleware.RequirePermission(h.roleService, "role", "read"), h.List)
-		roles.GET("/:id", middleware.RequirePermission(h.roleService, "role", "read"), h.Get)
-		roles.GET("/:id/permissions", middleware.RequirePermission(h.roleService, "role", "read"), h.GetPermissions)
+func (c *RoleController) Name() string { return "roles" }
+func (c *RoleController) Version() string { return "v1" }
+
+func (c *RoleController) Middlewares() []ginserver.MiddlewaresObject {
+	return []ginserver.MiddlewaresObject{
+		{
+			Methods:     []string{"GET"},
+			Middlewares: []gin.HandlerFunc{middleware.Auth(), middleware.RequirePermission(c.svc, "role", "read")},
+		},
 	}
 }
 
-func (h *RoleHandler) List(c *gin.Context) {
-	roles, err := h.roleService.List()
-	if err != nil {
-		log.ErrorContext(c.Request.Context(), "list roles failed", "err", err)
-		utils.InternalError(c, err.Error())
-		return
-	}
-	list := make([]map[string]interface{}, len(roles))
-	for i, r := range roles {
-		list[i] = r.ToResponse()
-	}
-	utils.Success(c, list)
+func (c *RoleController) List() (gin.HandlerFunc, error) {
+	return func(ctx *gin.Context) {
+		roles, err := c.svc.List()
+		if err != nil {
+			log.ErrorContext(ctx.Request.Context(), "list roles failed", "err", err)
+			utils.InternalError(ctx, err.Error())
+			return
+		}
+		list := make([]map[string]interface{}, len(roles))
+		for i, r := range roles {
+			list[i] = r.ToResponse()
+		}
+		utils.Success(ctx, list)
+	}, nil
 }
 
-func (h *RoleHandler) Get(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		utils.BadRequest(c, "invalid id")
-		return
-	}
-	role, err := h.roleService.GetByID(uint(id))
-	if err != nil {
-		log.WarnContext(c.Request.Context(), "get role failed", "id", id, "err", err)
-		utils.NotFound(c, "role not found")
-		return
-	}
-	utils.Success(c, role.ToResponse())
+func (c *RoleController) Get() (gin.HandlerFunc, error) {
+	return func(ctx *gin.Context) {
+		id, err := strconv.ParseUint(ctx.Param("id"), 10, 32)
+		if err != nil {
+			utils.BadRequest(ctx, "invalid id")
+			return
+		}
+		role, err := c.svc.GetByID(uint(id))
+		if err != nil {
+			log.WarnContext(ctx.Request.Context(), "get role failed", "id", id, "err", err)
+			utils.NotFound(ctx, "role not found")
+			return
+		}
+		utils.Success(ctx, role.ToResponse())
+	}, nil
 }
 
-func (h *RoleHandler) GetPermissions(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		utils.BadRequest(c, "invalid id")
-		return
-	}
-	perms, err := h.roleService.GetPermissions(uint(id))
-	if err != nil {
-		log.WarnContext(c.Request.Context(), "get role permissions failed", "id", id, "err", err)
-		utils.NotFound(c, err.Error())
-		return
-	}
-	utils.Success(c, gin.H{"permissions": perms})
-}
+func (c *RoleController) Create() (gin.HandlerFunc, error) { return nil, nil }
+func (c *RoleController) Update() (gin.HandlerFunc, error) { return nil, nil }
+func (c *RoleController) Delete() (gin.HandlerFunc, error) { return nil, nil }
+func (c *RoleController) Patch() (gin.HandlerFunc, error) { return nil, nil }

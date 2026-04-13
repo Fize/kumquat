@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -20,7 +21,6 @@ import (
 )
 
 func main() {
-	// 1. 加载配置
 	cfg, err := loadConfig()
 	if err != nil {
 		log.Fatal("failed to load config", "err", err)
@@ -28,27 +28,23 @@ func main() {
 
 	log.Info("starting portal server")
 
-	// 2. 初始化数据库
 	db, err := initDB(cfg)
 	if err != nil {
 		log.Fatal("failed to connect database", "err", err)
 	}
 	log.Info("database connected", "type", cfg.SQL.Type, "host", cfg.SQL.Host)
 
-	// 3. 执行数据库迁移
 	if err := migration.Migrate(db); err != nil {
 		log.Fatal("failed to migrate database", "err", err)
 	}
 	log.Info("database migrated")
 
-	// 4. 初始化预定义角色和权限
 	roleService := service.NewRoleService(db)
 	if err := roleService.InitRoles(); err != nil {
 		log.Fatal("failed to initialize roles", "err", err)
 	}
 	log.Info("roles and permissions initialized")
 
-	// 5. 设置 JWT 配置
 	utils.JWTSecret = []byte(cfg.JWT.Secret)
 	if cfg.JWT.ExpireDuration != "" {
 		if d, err := time.ParseDuration(cfg.JWT.ExpireDuration); err == nil {
@@ -61,19 +57,16 @@ func main() {
 		}
 	}
 
-	// 6. 创建 HTTP 服务（NewServer 自动注册 TraceID + GinLogger + GinRecovery）
 	server, err := ginserver.NewServer(&cfg.BaseConfig)
 	if err != nil {
 		log.Fatal("failed to create server", "err", err)
 	}
+	log.Info("ginserver initialized", "metrics", cfg.Server.Metrics.Enabled, "trace", cfg.Server.Trace.Enabled)
 
-	// 7. 额外注册 CORS 中间件
 	server.Engine.Use(middleware.CORS())
 
-	// 8. 注册路由
 	registerRoutes(server.Engine, db, roleService)
 
-	// 9. 启动服务（带优雅关闭）
 	ctx, cancel, err := server.RunWithContext()
 	if err != nil {
 		log.Fatal("failed to run server", "err", err)
@@ -82,7 +75,6 @@ func main() {
 
 	log.Info("portal server started", "addr", cfg.Server.BindAddr)
 
-	// 10. 等待中断信号
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
@@ -94,7 +86,6 @@ func main() {
 	}
 }
 
-// PortalConfig Portal 业务配置
 type PortalConfig struct {
 	config.BaseConfig
 	JWT struct {
@@ -107,7 +98,6 @@ type PortalConfig struct {
 	} `mapstructure:"security"`
 }
 
-// loadConfig 加载配置
 func loadConfig() (*PortalConfig, error) {
 	cfg := &PortalConfig{
 		BaseConfig: *config.NewConfig(),
@@ -129,7 +119,6 @@ func loadConfig() (*PortalConfig, error) {
 	return cfg, nil
 }
 
-// initDB 初始化数据库
 func initDB(cfg *PortalConfig) (*gorm.DB, error) {
 	sqlCfg, err := config.NewSQLConfig(
 		config.WithType(cfg.SQL.Type),
@@ -147,7 +136,6 @@ func initDB(cfg *PortalConfig) (*gorm.DB, error) {
 	return storage.NewDB(sqlCfg)
 }
 
-// registerRoutes 注册路由
 func registerRoutes(engine *gin.Engine, db *gorm.DB, roleService *service.RoleService) {
 	api := engine.Group("/api/v1")
 
@@ -156,18 +144,76 @@ func registerRoutes(engine *gin.Engine, db *gorm.DB, roleService *service.RoleSe
 	moduleService := service.NewModuleService(db)
 	projectService := service.NewProjectService(db)
 
-	authHandler := handler.NewAuthHandler(authService)
+	authHandler := handler.NewAuthController(authService)
 	authHandler.SetupRoutes(api)
 
-	userHandler := handler.NewUserHandler(userService, roleService)
-	userHandler.SetupRoutes(api)
+	restful := &ginserver.RestfulAPI{}
 
-	roleHandler := handler.NewRoleHandler(roleService)
-	roleHandler.SetupRoutes(api)
+	restful.Install(engine, handler.NewUserController(userService, roleService))
+	restful.Install(engine, handler.NewRoleController(roleService))
+	restful.Install(engine, handler.NewModuleController(moduleService, roleService))
+	restful.Install(engine, handler.NewProjectController(projectService, roleService))
 
-	moduleHandler := handler.NewModuleHandler(moduleService, roleService)
-	moduleHandler.SetupRoutes(api)
+	registerCustomRoutes(api, db, roleService)
+}
 
-	projectHandler := handler.NewProjectHandler(projectService, roleService)
-	projectHandler.SetupRoutes(api)
+func registerCustomRoutes(api *gin.RouterGroup, db *gorm.DB, roleService *service.RoleService) {
+	moduleService := service.NewModuleService(db)
+	projectService := service.NewProjectService(db)
+
+	api.GET("/modules/:id/children", middleware.Auth(),
+		middleware.RequirePermission(roleService, "module", "read"),
+		func(c *gin.Context) {
+			id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+			if err != nil {
+				utils.BadRequest(c, "invalid id")
+				return
+			}
+			module, err := moduleService.GetByID(uint(id))
+			if err != nil {
+				log.WarnContext(c.Request.Context(), "get module children failed", "id", id, "err", err)
+				utils.NotFound(c, "module not found")
+				return
+			}
+			utils.Success(c, module.Children)
+		})
+
+	api.GET("/projects/module/:moduleId", middleware.Auth(),
+		middleware.RequirePermission(roleService, "project", "read"),
+		func(c *gin.Context) {
+			moduleId, err := strconv.ParseUint(c.Param("moduleId"), 10, 32)
+			if err != nil {
+				utils.BadRequest(c, "invalid module id")
+				return
+			}
+			page, size := utils.GetPageSize(c)
+			projects, total, err := projectService.ListByModule(uint(moduleId), page, size)
+			if err != nil {
+				log.ErrorContext(c.Request.Context(), "list projects by module failed", "module_id", moduleId, "err", err)
+				utils.InternalError(c, err.Error())
+				return
+			}
+			list := make([]map[string]interface{}, len(projects))
+			for i, p := range projects {
+				list[i] = p.ToResponse()
+			}
+			utils.PageSuccess(c, total, page, size, list)
+		})
+
+	api.GET("/roles/:id/permissions", middleware.Auth(),
+		middleware.RequirePermission(roleService, "role", "read"),
+		func(c *gin.Context) {
+			id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+			if err != nil {
+				utils.BadRequest(c, "invalid id")
+				return
+			}
+			perms, err := roleService.GetPermissions(uint(id))
+			if err != nil {
+				log.WarnContext(c.Request.Context(), "get role permissions failed", "id", id, "err", err)
+				utils.NotFound(c, err.Error())
+				return
+			}
+			utils.Success(c, gin.H{"permissions": perms})
+		})
 }
