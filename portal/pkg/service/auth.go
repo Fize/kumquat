@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/fize/go-ext/log"
+	apperr "github.com/fize/kumquat/portal/pkg/errors"
 	"github.com/fize/kumquat/portal/pkg/model"
 	"gorm.io/gorm"
 )
@@ -26,26 +27,26 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (str
 	if err := s.db.Where("username = ?", username).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.WarnContext(ctx, "login failed: user not found", "username", username)
-			return "", nil, errors.New("invalid username or password")
+			return "", nil, apperr.New(apperr.CodeInvalidPassword, "invalid username or password")
 		}
 		log.ErrorContext(ctx, "login failed: db error", "err", err, "username", username)
-		return "", nil, err
+		return "", nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	if !user.CheckPassword(password) {
 		log.WarnContext(ctx, "login failed: incorrect password", "username", username)
-		return "", nil, errors.New("invalid username or password")
+		return "", nil, apperr.New(apperr.CodeInvalidPassword, "invalid username or password")
 	}
 
 	if err := s.db.Model(&user).Association("Role").Find(&user.Role); err != nil {
 		log.ErrorContext(ctx, "login failed: load role error", "err", err, "user_id", user.ID)
-		return "", nil, err
+		return "", nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	token, err := s.jwtService.GenerateToken(user.ID, user.Username, user.RoleID, user.Role.Name)
 	if err != nil {
 		log.ErrorContext(ctx, "login failed: generate token error", "err", err, "user_id", user.ID)
-		return "", nil, err
+		return "", nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	log.InfoContext(ctx, "user login", "user_id", user.ID, "username", user.Username, "role", user.Role.Name)
@@ -58,19 +59,19 @@ func (s *AuthService) Register(ctx context.Context, username, email, password, n
 	s.db.Model(&model.User{}).Where("username = ?", username).Count(&count)
 	if count > 0 {
 		log.WarnContext(ctx, "register failed: username exists", "username", username)
-		return nil, errors.New("username already exists")
+		return nil, apperr.New(apperr.CodeUsernameExists, "")
 	}
 
 	s.db.Model(&model.User{}).Where("email = ?", email).Count(&count)
 	if count > 0 {
 		log.WarnContext(ctx, "register failed: email exists", "email", email)
-		return nil, errors.New("email already exists")
+		return nil, apperr.New(apperr.CodeEmailExists, "")
 	}
 
 	var role model.Role
 	if err := s.db.Where("name = ?", model.RoleGuest).First(&role).Error; err != nil {
 		log.ErrorContext(ctx, "register failed: default role not found", "err", err)
-		return nil, errors.New("default role not found")
+		return nil, apperr.New(apperr.CodeDefaultRoleNotFound, "")
 	}
 
 	user := model.User{
@@ -83,7 +84,7 @@ func (s *AuthService) Register(ctx context.Context, username, email, password, n
 
 	if err := s.db.Create(&user).Error; err != nil {
 		log.ErrorContext(ctx, "register failed: create user error", "err", err, "username", username)
-		return nil, err
+		return nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	user.Role = role
@@ -96,18 +97,18 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID uint, oldPasswo
 	var user model.User
 	if err := s.db.First(&user, userID).Error; err != nil {
 		log.WarnContext(ctx, "change password failed: user not found", "user_id", userID)
-		return errors.New("user not found")
+		return apperr.New(apperr.CodeUserNotFound, "")
 	}
 
 	if !user.CheckPassword(oldPassword) {
 		log.WarnContext(ctx, "change password failed: incorrect old password", "user_id", userID)
-		return errors.New("incorrect old password")
+		return apperr.New(apperr.CodeInvalidPassword, "incorrect old password")
 	}
 
 	user.Password = newPassword
 	if err := s.db.Save(&user).Error; err != nil {
 		log.ErrorContext(ctx, "change password failed: db error", "err", err, "user_id", userID)
-		return err
+		return apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	log.InfoContext(ctx, "password changed", "user_id", userID, "username", user.Username)
@@ -118,7 +119,10 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID uint, oldPasswo
 func (s *AuthService) GetUserByID(ctx context.Context, userID uint) (*model.User, error) {
 	var user model.User
 	if err := s.db.Preload("Role").First(&user, userID).Error; err != nil {
-		return nil, err
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperr.New(apperr.CodeUserNotFound, "")
+		}
+		return nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 	return &user, nil
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/fize/go-ext/log"
+	apperr "github.com/fize/kumquat/portal/pkg/errors"
 	"github.com/fize/kumquat/portal/pkg/model"
 	"gorm.io/gorm"
 )
@@ -24,7 +25,7 @@ func (s *RoleService) List(ctx context.Context) ([]model.Role, error) {
 	var roles []model.Role
 	if err := s.db.Find(&roles).Error; err != nil {
 		log.ErrorContext(ctx, "list roles failed", "err", err)
-		return nil, err
+		return nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 	return roles, nil
 }
@@ -33,7 +34,10 @@ func (s *RoleService) List(ctx context.Context) ([]model.Role, error) {
 func (s *RoleService) GetByID(ctx context.Context, id uint) (*model.Role, error) {
 	var role model.Role
 	if err := s.db.First(&role, id).Error; err != nil {
-		return nil, err
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperr.New(apperr.CodeRoleNotFound, "")
+		}
+		return nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 	return &role, nil
 }
@@ -43,13 +47,13 @@ func (s *RoleService) GetPermissions(ctx context.Context, roleID uint) ([]model.
 	role, err := s.GetByID(ctx, roleID)
 	if err != nil {
 		log.WarnContext(ctx, "get permissions failed: role not found", "role_id", roleID)
-		return nil, errors.New("role not found")
+		return nil, err
 	}
 
 	var perms []model.Permission
 	if err := s.db.Where("role_id = ?", role.ID).Find(&perms).Error; err != nil {
 		log.ErrorContext(ctx, "get permissions failed: db error", "err", err, "role_id", role.ID)
-		return nil, err
+		return nil, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 	return perms, nil
 }
@@ -63,12 +67,12 @@ func (s *RoleService) InitRoles() error {
 				role = model.Role{Name: roleName}
 				if err := s.db.Create(&role).Error; err != nil {
 					log.Error("init roles failed: create role error", "err", err, "role", roleName)
-					return err
+					return apperr.WrapCode(apperr.CodeInternal, err)
 				}
 				log.Info("role created", "role_id", role.ID, "role", roleName)
 			} else {
 				log.Error("init roles failed: query role error", "err", err, "role", roleName)
-				return err
+				return apperr.WrapCode(apperr.CodeInternal, err)
 			}
 		}
 
@@ -85,7 +89,7 @@ func (s *RoleService) InitRoles() error {
 				}
 				if err := s.db.Create(&perm).Error; err != nil {
 					log.Error("init permissions failed", "err", err, "role", roleName, "resource", p.Resource, "action", p.Action)
-					return err
+					return apperr.WrapCode(apperr.CodeInternal, err)
 				}
 			}
 			log.Info("role permissions initialized", "role", roleName, "count", len(permissions))
@@ -100,7 +104,7 @@ func (s *RoleService) CheckPermission(ctx context.Context, roleID uint, resource
 	var perms []model.Permission
 	if err := s.db.Where("role_id = ?", roleID).Find(&perms).Error; err != nil {
 		log.ErrorContext(ctx, "check permission failed: db error", "err", err, "role_id", roleID)
-		return false, err
+		return false, apperr.WrapCode(apperr.CodeInternal, err)
 	}
 
 	allowed := false
