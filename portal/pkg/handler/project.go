@@ -77,16 +77,18 @@ func (c *ProjectController) Get() (gin.HandlerFunc, error) {
 func (c *ProjectController) Create() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
 		var req struct {
-			Name     string           `json:"name" binding:"required"`
-			ModuleID uint             `json:"module_id" binding:"required"`
-			Config   model.JSONConfig `json:"config"`
+			Name     string                 `json:"name" binding:"required"`
+			ModuleID uint                   `json:"module_id" binding:"required"`
+			Config   map[string]interface{} `json:"config"`
 		}
 		if err := ctx.ShouldBindJSON(&req); err != nil {
 			log.WarnContext(ctx.Request.Context(), "create project request validation failed", "err", err)
 			utils.BadRequest(ctx, err.Error())
 			return
 		}
-		project, err := c.svc.Create(ctx.Request.Context(), req.Name, req.ModuleID, req.Config)
+		// 转换为 model.JSONConfig 类型以确保正确的数据库序列化
+		config := model.JSONConfig(req.Config)
+		project, err := c.svc.Create(ctx.Request.Context(), req.Name, req.ModuleID, config)
 		if err != nil {
 			log.WarnContext(ctx.Request.Context(), "create project failed", "name", req.Name, "module_id", req.ModuleID, "err", err)
 			utils.Conflict(ctx, err.Error())
