@@ -12,7 +12,11 @@ func (j JSONConfig) Value() (interface{}, error) {
 	if j == nil {
 		return nil, nil
 	}
-	return json.Marshal(j)
+	data, err := json.Marshal(j)
+	if err != nil {
+		return nil, err
+	}
+	return string(data), nil
 }
 
 // Scan 实现 sql.Scanner
@@ -21,11 +25,16 @@ func (j *JSONConfig) Scan(value interface{}) error {
 		*j = nil
 		return nil
 	}
-	bytes, ok := value.([]byte)
-	if !ok {
+	var data []byte
+	switch v := value.(type) {
+	case []byte:
+		data = v
+	case string:
+		data = []byte(v)
+	default:
 		return nil
 	}
-	return json.Unmarshal(bytes, j)
+	return json.Unmarshal(data, j)
 }
 
 // Project 项目模型
