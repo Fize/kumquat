@@ -82,7 +82,7 @@ func TestAgentController_Reconcile(t *testing.T) {
 	config := addon.AddonConfig{
 		ClusterName: "test-cluster",
 		Config: map[string]string{
-			ConfigChartRepoURL: "https://openkruise.github.io/charts/",
+			ConfigChartRepoURL: "https://github.com/openkruise/charts/releases/download",
 			ConfigChartName:    "kruise-rollout",
 			ConfigChartVersion: "0.6.2",
 		},
@@ -131,7 +131,7 @@ func TestResolveChartURL(t *testing.T) {
 				ChartName:    "my-chart",
 				ChartVersion: "1.0.0",
 			},
-			wantURL: "https://charts.example.com/my-chart-1.0.0.tgz",
+			wantURL: "https://charts.example.com/my-chart-1.0.0/my-chart-1.0.0.tgz",
 		},
 		{
 			name: "repo URL with trailing slash",
@@ -140,7 +140,7 @@ func TestResolveChartURL(t *testing.T) {
 				ChartName:    "my-chart",
 				ChartVersion: "1.0.0",
 			},
-			wantURL: "https://charts.example.com/my-chart-1.0.0.tgz",
+			wantURL: "https://charts.example.com/my-chart-1.0.0/my-chart-1.0.0.tgz",
 		},
 		{
 			name: "empty version uses default",
@@ -149,7 +149,7 @@ func TestResolveChartURL(t *testing.T) {
 				ChartName:    "my-chart",
 				ChartVersion: "",
 			},
-			wantURL: "https://charts.example.com/my-chart-0.6.2.tgz",
+			wantURL: "https://charts.example.com/my-chart-0.6.2/my-chart-0.6.2.tgz",
 		},
 		{
 			name: "invalid URL scheme",
