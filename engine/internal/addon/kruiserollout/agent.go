@@ -310,8 +310,11 @@ func resolveChartURL(cfg ChartConfig) (string, error) {
 		cfg.ChartVersion = DefaultVersion
 	}
 
-	// Construct chart URL: https://repo-url/chart-name-version.tgz
-	return fmt.Sprintf("%s/%s-%s.tgz", strings.TrimRight(cfg.RepoURL, "/"), cfg.ChartName, cfg.ChartVersion), nil
+	// Construct chart URL
+	// For GitHub Releases format: https://github.com/owner/repo/releases/download/tag/chart-version.tgz
+	// Example: https://github.com/openkruise/charts/releases/download/kruise-rollout-0.6.2/kruise-rollout-0.6.2.tgz
+	releaseTag := fmt.Sprintf("%s-%s", cfg.ChartName, cfg.ChartVersion)
+	return fmt.Sprintf("%s/%s/%s-%s.tgz", strings.TrimRight(cfg.RepoURL, "/"), releaseTag, cfg.ChartName, cfg.ChartVersion), nil
 }
 
 type valuesRef struct {

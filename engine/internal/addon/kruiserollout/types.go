@@ -14,7 +14,8 @@ const (
 	DefaultReleaseName = "kruise-rollout"
 
 	// DefaultRepoURL is the default Helm chart repository URL
-	DefaultRepoURL = "https://openkruise.github.io/charts/"
+	// OpenKruise charts are hosted on GitHub Releases, not on GitHub Pages
+	DefaultRepoURL = "https://github.com/openkruise/charts/releases/download"
 
 	// DefaultChartName is the default chart name
 	DefaultChartName = "kruise-rollout"
