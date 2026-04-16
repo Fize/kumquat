@@ -12,6 +12,25 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// CreateUserRequest 创建用户请求
+// swagger:model
+type CreateUserRequest struct {
+	Username string `json:"username" binding:"required,min=3,max=32" example:"john_doe"`
+	Email    string `json:"email" binding:"required,email" example:"john@example.com"`
+	Password string `json:"password" binding:"required,min=6,max=32" example:"password123"`
+	Nickname string `json:"nickname" example:"John"`
+	RoleID   uint   `json:"role_id" binding:"required" example:"2"`
+	ModuleID *uint  `json:"module_id" example:"1"`
+}
+
+// UpdateUserRequest 更新用户请求
+// swagger:model
+type UpdateUserRequest struct {
+	Nickname string `json:"nickname" example:"John Updated"`
+	RoleID   uint   `json:"role_id" example:"2"`
+	ModuleID *uint  `json:"module_id" example:"1"`
+}
+
 // UserController 用户控制器，实现 RestController 接口
 type UserController struct {
 	svc           *service.UserService
@@ -40,6 +59,19 @@ func (c *UserController) Middlewares() []ginserver.MiddlewaresObject {
 	}
 }
 
+// List 获取用户列表
+// @Summary 获取用户列表（分页）
+// @Description 获取所有用户的分页列表，需要 admin 角色或 user:read 权限
+// @Tags users
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param page query int false "页码" default(1)
+// @Param size query int false "每页数量" default(10)
+// @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":{users},\"pagination\":{...}}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
+// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"无权限\"}"
+// @Router /users [get]
 func (c *UserController) List() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
 		page, size := utils.GetPageSize(ctx)
@@ -57,6 +89,19 @@ func (c *UserController) List() (gin.HandlerFunc, error) {
 	}, nil
 }
 
+// Get 获取单个用户
+// @Summary 根据 ID 获取用户信息
+// @Description 获取指定 ID 的用户详情
+// @Tags users
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param id path int true "用户ID"
+// @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":{user}}"
+// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"无效的用户ID\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
+// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"用户不存在\"}"
+// @Router /users/{id} [get]
 func (c *UserController) Get() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
 		id, err := strconv.ParseUint(ctx.Param("id"), 10, 32)
@@ -74,6 +119,20 @@ func (c *UserController) Get() (gin.HandlerFunc, error) {
 	}, nil
 }
 
+// Create 创建用户
+// @Summary 创建新用户
+// @Description 创建新用户账号，仅 admin 角色可操作
+// @Tags users
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param request body CreateUserRequest true "创建用户请求"
+// @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":{user}}"
+// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"请求参数错误\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
+// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"无权限\"}"
+// @Failure 409 {object} map[string]interface{} "{\"code\":409,\"message\":\"用户名或邮箱已存在\"}"
+// @Router /users [post]
 func (c *UserController) Create() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
 		var req struct {
@@ -100,6 +159,21 @@ func (c *UserController) Create() (gin.HandlerFunc, error) {
 	}, nil
 }
 
+// Update 更新用户
+// @Summary 更新用户信息
+// @Description 更新指定用户的信息，仅 admin 角色可操作
+// @Tags users
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param id path int true "用户ID"
+// @Param request body UpdateUserRequest true "更新用户请求"
+// @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":{user}}"
+// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"请求参数错误\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
+// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"无权限\"}"
+// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"用户不存在\"}"
+// @Router /users/{id} [put]
 func (c *UserController) Update() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
 		id, err := strconv.ParseUint(ctx.Param("id"), 10, 32)
@@ -128,6 +202,19 @@ func (c *UserController) Update() (gin.HandlerFunc, error) {
 	}, nil
 }
 
+// Delete 删除用户
+// @Summary 删除用户
+// @Description 删除指定用户，仅 admin 角色可操作。不能删除最后一个 admin 用户。
+// @Tags users
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param id path int true "用户ID"
+// @Success 200 {object} map[string]interface{} "{\"code\":0,\"message\":\"deleted\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
+// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"不能删除最后一个 admin 用户\"}"
+// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"用户不存在\"}"
+// @Router /users/{id} [delete]
 func (c *UserController) Delete() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
 		id, err := strconv.ParseUint(ctx.Param("id"), 10, 32)

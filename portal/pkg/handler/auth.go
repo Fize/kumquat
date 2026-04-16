@@ -8,6 +8,29 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// LoginRequest 登录请求
+// swagger:model
+type LoginRequest struct {
+	Username string `json:"username" binding:"required" example:"admin"`
+	Password string `json:"password" binding:"required" example:"admin123"`
+}
+
+// RegisterRequest 注册请求
+// swagger:model
+type RegisterRequest struct {
+	Username string `json:"username" binding:"required,min=3,max=32" example:"john_doe"`
+	Email    string `json:"email" binding:"required,email" example:"john@example.com"`
+	Password string `json:"password" binding:"required,min=6,max=32" example:"password123"`
+	Nickname string `json:"nickname" example:"John"`
+}
+
+// ChangePasswordRequest 修改密码请求
+// swagger:model
+type ChangePasswordRequest struct {
+	OldPassword string `json:"oldPassword" binding:"required" example:"oldpass123"`
+	NewPassword string `json:"newPassword" binding:"required,min=6,max=32" example:"newpass123"`
+}
+
 // AuthController 认证控制器（手动路由注册，不使用 RestfulAPI）
 type AuthController struct {
 	authService   *service.AuthService
@@ -34,7 +57,17 @@ func (h *AuthController) SetupRoutes(api *gin.RouterGroup) {
 	}
 }
 
-// Login 登录
+// Login 用户登录
+// @Summary 用户登录
+// @Description 使用用户名和密码获取 JWT Token
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body LoginRequest true "登录请求"
+// @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":{\"token\":\"...\",\"user\":{...}}}"
+// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"...\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"...\"}"
+// @Router /auth/login [post]
 func (h *AuthController) Login(c *gin.Context) {
 	var req struct {
 		Username string `json:"username" binding:"required"`
@@ -56,6 +89,16 @@ func (h *AuthController) Login(c *gin.Context) {
 }
 
 // DoRegister 用户注册
+// @Summary 用户注册
+// @Description 注册新用户账号，默认角色为 guest
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body RegisterRequest true "注册请求"
+// @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":{user}}"
+// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"...\"}"
+// @Failure 409 {object} map[string]interface{} "{\"code\":409,\"message\":\"用户名或邮箱已存在\"}"
+// @Router /auth/register [post]
 func (h *AuthController) DoRegister(c *gin.Context) {
 	var req struct {
 		Username string `json:"username" binding:"required,min=3,max=32"`
@@ -78,7 +121,16 @@ func (h *AuthController) DoRegister(c *gin.Context) {
 	utils.Success(c, user.ToResponse())
 }
 
-// Me 获取当前用户
+// Me 获取当前用户信息
+// @Summary 获取当前登录用户信息
+// @Description 获取当前 JWT Token 对应的用户信息
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":{user}}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
+// @Router /auth/me [get]
 func (h *AuthController) Me(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	user, err := h.authService.GetUserByID(c.Request.Context(), userID)
@@ -91,6 +143,18 @@ func (h *AuthController) Me(c *gin.Context) {
 }
 
 // ChangePassword 修改密码
+// @Summary 修改当前用户密码
+// @Description 修改当前登录用户的密码
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param request body ChangePasswordRequest true "修改密码请求"
+// @Success 200 {object} map[string]interface{} "{\"code\":0,\"message\":\"password changed successfully\"}"
+// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"...\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
+// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"旧密码错误\"}"
+// @Router /auth/change-password [put]
 func (h *AuthController) ChangePassword(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	var req struct {

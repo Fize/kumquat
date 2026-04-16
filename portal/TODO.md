@@ -3,22 +3,23 @@
 ## 高优先级
 
 ### 1. 单元测试
-- [ ] 为 service 层添加单元测试（mock repository）
-- [ ] 为 handler 层添加 HTTP 测试
-- [ ] 添加 JWT 工具测试
+- [x] 为 service 层添加单元测试（mock repository）
+- [x] 为 handler 层添加 HTTP 测试
+- [x] 添加 JWT 工具测试
+- [ ] 补充更多边界条件测试
 - [ ] 配置 CI/CD（GitHub Actions）
 
 ### 2. Repository 层
-- [ ] 创建 pkg/repository/user.go 接口
-- [ ] 创建 pkg/repository/role.go 接口
-- [ ] 创建 pkg/repository/module.go 接口
-- [ ] 创建 pkg/repository/project.go 接口
+- [x] 创建 pkg/repository/user.go 接口
+- [x] 创建 pkg/repository/role.go 接口
+- [x] 创建 pkg/repository/module.go 接口
+- [x] 创建 pkg/repository/project.go 接口
 - [ ] 重构 service 依赖 repository 接口而非 *gorm.DB
 
 ### 3. 统一错误处理
-- [ ] 创建 pkg/errors/code.go 定义错误码
-- [ ] 创建 pkg/errors/app_error.go 错误类型
-- [ ] 改造 handler 返回统一错误格式
+- [x] 创建 pkg/errors/code.go 定义错误码
+- [x] 创建 pkg/errors/app_error.go 错误类型
+- [x] 改造 handler 返回统一错误格式
 - [ ] 添加全局错误恢复中间件
 
 ### 4. Metrics 监控
@@ -38,9 +39,9 @@
 - [x] OpenTelemetry Trace（ginserver 自动集成，stdout 或 OTLP）
 
 ### 6. API 文档
-- [ ] 添加 Swagger 注解
-- [ ] 生成 swagger.json
-- [ ] 部署 Swagger UI
+- [x] 添加 Swagger 注解
+- [x] 生成 swagger.json
+- [x] 部署 Swagger UI（访问 http://localhost:8080/swagger/index.html）
 
 ### 7. 事务处理
 - [ ] service 方法添加事务支持
