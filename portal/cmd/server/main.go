@@ -30,6 +30,7 @@ import (
 	"github.com/fize/go-ext/ginserver"
 	"github.com/fize/go-ext/log"
 	"github.com/fize/go-ext/storage"
+	k8sclient "github.com/fize/kumquat/portal/pkg/client"
 	"github.com/fize/kumquat/portal/pkg/handler"
 	"github.com/fize/kumquat/portal/pkg/middleware"
 	"github.com/fize/kumquat/portal/pkg/migration"
@@ -99,12 +100,35 @@ func main() {
 	moduleService := service.NewModuleService(moduleRepo, db)
 	projectService := service.NewProjectService(projectRepo, db)
 
+	// 初始化 K8s Client（用于操作 Engine CRD）
+	k8sClient, err := k8sclient.NewK8sClient(&k8sclient.Config{
+		KubeconfigPath: cfg.Kubernetes.KubeconfigPath,
+		MasterURL:      cfg.Kubernetes.MasterURL,
+	})
+	if err != nil {
+		log.Warn("failed to initialize k8s client, k8s resources will not be available", "err", err)
+		// 不中断启动，只是 K8s 功能不可用
+	} else {
+		log.Info("k8s client initialized")
+	}
+
+	// 初始化 K8s 相关 Service
+	var clusterService *service.ClusterService
+	var applicationService *service.ApplicationService
+	var workspaceService *service.WorkspaceService
+	if k8sClient != nil {
+		clusterService = service.NewClusterService(k8sClient.GetClient())
+		applicationService = service.NewApplicationService(k8sClient.GetClient())
+		workspaceService = service.NewWorkspaceService(k8sClient.GetClient())
+	}
+
 	// 初始化 Middleware
 	authMiddleware := middleware.NewAuthMiddleware(jwtService)
 
 	server.Engine.Use(middleware.CORS())
 
-	registerRoutes(server.Engine, db, authService, userService, moduleService, projectService, roleService, authMiddleware)
+	registerRoutes(server.Engine, db, authService, userService, moduleService, projectService, roleService, authMiddleware,
+		clusterService, applicationService, workspaceService)
 
 	ctx, cancel, err := server.RunWithContext()
 	if err != nil {
@@ -135,6 +159,10 @@ type PortalConfig struct {
 	Security struct {
 		AllowedEmailDomains []string `mapstructure:"allowed_email_domains"`
 	} `mapstructure:"security"`
+	Kubernetes struct {
+		KubeconfigPath string `mapstructure:"kubeconfig_path"`
+		MasterURL      string `mapstructure:"master_url"`
+	} `mapstructure:"kubernetes"`
 }
 
 func loadConfig() (*PortalConfig, error) {
@@ -179,7 +207,8 @@ func initDB(cfg *PortalConfig, logger *log.Logger) (*gorm.DB, error) {
 	)
 }
 
-func registerRoutes(engine *gin.Engine, db *gorm.DB, authService *service.AuthService, userService *service.UserService, moduleService *service.ModuleService, projectService *service.ProjectService, roleService *service.RoleService, authMiddleware *middleware.AuthMiddleware) {
+func registerRoutes(engine *gin.Engine, db *gorm.DB, authService *service.AuthService, userService *service.UserService, moduleService *service.ModuleService, projectService *service.ProjectService, roleService *service.RoleService, authMiddleware *middleware.AuthMiddleware,
+	clusterService *service.ClusterService, applicationService *service.ApplicationService, workspaceService *service.WorkspaceService) {
 	// Swagger UI
 	engine.GET("/swagger/*any", swagger.WrapHandler(swaggerFiles.Handler))
 
@@ -194,6 +223,20 @@ func registerRoutes(engine *gin.Engine, db *gorm.DB, authService *service.AuthSe
 	restful.Install(engine, handler.NewRoleController(roleService, authMiddleware))
 	restful.Install(engine, handler.NewModuleController(moduleService, roleService, authMiddleware))
 	restful.Install(engine, handler.NewProjectController(projectService, roleService, authMiddleware))
+
+	// 注册 K8s 相关路由（如果 K8s client 初始化成功）
+	if clusterService != nil {
+		restful.Install(engine, handler.NewClusterController(clusterService, roleService, authMiddleware))
+		log.Info("cluster routes registered")
+	}
+	if applicationService != nil {
+		restful.Install(engine, handler.NewApplicationController(applicationService, roleService, authMiddleware))
+		log.Info("application routes registered")
+	}
+	if workspaceService != nil {
+		restful.Install(engine, handler.NewWorkspaceController(workspaceService, roleService, authMiddleware))
+		log.Info("workspace routes registered")
+	}
 
 	registerCustomRoutes(api, moduleService, projectService, roleService, authMiddleware)
 }
