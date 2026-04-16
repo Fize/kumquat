@@ -12,19 +12,19 @@ import (
 	"gorm.io/gorm"
 )
 
-// UserService 用户服务
+// UserService user service
 type UserService struct {
 	repo   repository.UserRepository
 	roleRepo repository.RoleRepository
-	db     *gorm.DB // 保留用于复杂操作
+	db     *gorm.DB // reserved for complex operations
 }
 
-// NewUserService 创建用户服务
+// NewUserService creates user service
 func NewUserService(repo repository.UserRepository, roleRepo repository.RoleRepository, db *gorm.DB) *UserService {
 	return &UserService{repo: repo, roleRepo: roleRepo, db: db}
 }
 
-// List 获取用户列表
+// List gets user list
 func (s *UserService) List(ctx context.Context, page, size int) ([]model.User, int64, error) {
 	users, total, err := s.repo.List(ctx, page, size)
 	if err != nil {
@@ -34,7 +34,7 @@ func (s *UserService) List(ctx context.Context, page, size int) ([]model.User, i
 	return users, total, nil
 }
 
-// GetByID 根据ID获取用户
+// GetByID gets user by ID
 func (s *UserService) GetByID(ctx context.Context, id uint) (*model.User, error) {
 	user, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -46,7 +46,7 @@ func (s *UserService) GetByID(ctx context.Context, id uint) (*model.User, error)
 	return user, nil
 }
 
-// Create 创建用户
+// Create creates user
 func (s *UserService) Create(ctx context.Context, username, email, password, nickname string, roleID uint, moduleID *uint) (*model.User, error) {
 	exists, err := s.repo.ExistsByUsername(ctx, username)
 	if err != nil {
@@ -90,7 +90,7 @@ func (s *UserService) Create(ctx context.Context, username, email, password, nic
 	return s.repo.GetByID(ctx, user.ID)
 }
 
-// Update 更新用户
+// Update updates user
 func (s *UserService) Update(ctx context.Context, id uint, nickname string, roleID uint, moduleID *uint) (*model.User, error) {
 	user, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -123,7 +123,7 @@ func (s *UserService) Update(ctx context.Context, id uint, nickname string, role
 	return s.repo.GetByID(ctx, id)
 }
 
-// Delete 删除用户
+// Delete deletes user
 func (s *UserService) Delete(ctx context.Context, id uint) error {
 	user, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -151,7 +151,7 @@ func (s *UserService) Delete(ctx context.Context, id uint) error {
 	return nil
 }
 
-// Search 搜索用户
+// Search searches users
 func (s *UserService) Search(ctx context.Context, keyword string, page, size int) ([]model.User, int64, error) {
 	users, total, err := s.repo.Search(ctx, keyword, page, size)
 	if err != nil {

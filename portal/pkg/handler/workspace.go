@@ -38,7 +38,7 @@ func (c *WorkspaceController) Version() string {
 }
 
 // Middlewares returns the middlewares for this controller
-// Workspace 管理：Admin/Member 可读写，Guest 只读
+// Workspace management: Admin/Member can read/write, Guest read-only
 func (c *WorkspaceController) Middlewares() []ginserver.MiddlewaresObject {
 	return []ginserver.MiddlewaresObject{
 		{
@@ -58,11 +58,11 @@ func (c *WorkspaceController) Middlewares() []ginserver.MiddlewaresObject {
 	}
 }
 
-// ListWorkspacesRequest 工作空间列表查询参数
+// ListWorkspacesRequest represents workspace list query parameters
 type ListWorkspacesRequest struct {
 	Cluster  string `form:"cluster"`
-	Limit    int64  `form:"limit"`     // 分页大小
-	Continue string `form:"continue"`  // 分页游标
+	Limit    int64  `form:"limit"`     // page size
+	Continue string `form:"continue"`  // pagination cursor
 }
 
 // List GET /workspaces

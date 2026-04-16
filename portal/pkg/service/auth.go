@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// AuthService 认证服务
+// AuthService authentication service
 type AuthService struct {
 	repo       repository.UserRepository
 	roleRepo   repository.RoleRepository
@@ -19,12 +19,12 @@ type AuthService struct {
 	db         *gorm.DB
 }
 
-// NewAuthService 创建认证服务
+// NewAuthService creates authentication service
 func NewAuthService(repo repository.UserRepository, roleRepo repository.RoleRepository, jwtService *JWTService, db *gorm.DB) *AuthService {
 	return &AuthService{repo: repo, roleRepo: roleRepo, jwtService: jwtService, db: db}
 }
 
-// Login 用户登录
+// Login user login
 func (s *AuthService) Login(ctx context.Context, username, password string) (string, *model.User, error) {
 	user, err := s.repo.GetByUsername(ctx, username)
 	if err != nil {
@@ -41,7 +41,7 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (str
 		return "", nil, apperr.New(apperr.CodeInvalidPassword, "invalid username or password")
 	}
 
-	// 加载角色
+	// Load role
 	if err := s.db.Model(user).Association("Role").Find(&user.Role); err != nil {
 		log.ErrorContext(ctx, "login failed: load role error", "err", err, "user_id", user.ID)
 		return "", nil, apperr.WrapCode(apperr.CodeInternal, err)
@@ -57,9 +57,9 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (str
 	return token, user, nil
 }
 
-// Register 用户注册（使用事务）
+// Register user registration (using transaction)
 func (s *AuthService) Register(ctx context.Context, username, email, password, nickname string) (*model.User, error) {
-	// 预检查
+	// Pre-check
 	exists, err := s.repo.ExistsByUsername(ctx, username)
 	if err != nil {
 		return nil, apperr.WrapCode(apperr.CodeInternal, err)
@@ -81,9 +81,9 @@ func (s *AuthService) Register(ctx context.Context, username, email, password, n
 	var user model.User
 	var role model.Role
 
-	// 在事务中创建用户
+	// Create user in transaction
 	err = repository.WithTransaction(s.db, ctx, func(tx *gorm.DB) error {
-		// 查询默认角色
+		// Query default role
 		if err := tx.Where("name = ?", model.RoleGuest).First(&role).Error; err != nil {
 			log.ErrorContext(ctx, "register failed: default role not found", "err", err)
 			return err
@@ -114,7 +114,7 @@ func (s *AuthService) Register(ctx context.Context, username, email, password, n
 	return &user, nil
 }
 
-// ChangePassword 修改密码
+// ChangePassword changes password
 func (s *AuthService) ChangePassword(ctx context.Context, userID uint, oldPassword, newPassword string) error {
 	user, err := s.repo.GetByID(ctx, userID)
 	if err != nil {
@@ -137,7 +137,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID uint, oldPasswo
 	return nil
 }
 
-// GetUserByID 根据ID获取用户
+// GetUserByID gets user by ID
 func (s *AuthService) GetUserByID(ctx context.Context, userID uint) (*model.User, error) {
 	user, err := s.repo.GetByID(ctx, userID)
 	if err != nil {

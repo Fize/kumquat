@@ -38,11 +38,11 @@ func (c *ClusterController) Version() string {
 }
 
 // Middlewares returns the middlewares for this controller
-// Cluster 管理仅 Admin 可访问
+// Cluster management is only accessible to Admin
 func (c *ClusterController) Middlewares() []ginserver.MiddlewaresObject {
 	return []ginserver.MiddlewaresObject{
 		{
-			Methods: []string{"*"}, // 所有方法都需要 Admin 权限
+			Methods: []string{"*"}, // All methods require Admin permission
 			Middlewares: []gin.HandlerFunc{
 				c.authMiddleware.Auth(),
 				middleware.RequireRole(model.RoleAdmin),
@@ -51,12 +51,12 @@ func (c *ClusterController) Middlewares() []ginserver.MiddlewaresObject {
 	}
 }
 
-// ListClustersRequest 集群列表查询参数
+// ListClustersRequest represents cluster list query parameters
 type ListClustersRequest struct {
 	State          string `form:"state"`          // Pending, Ready, Offline, Rejected
 	ConnectionMode string `form:"connectionMode"` // Hub, Edge
-	Limit          int64  `form:"limit"`          // 分页大小
-	Continue       string `form:"continue"`       // 分页游标
+	Limit          int64  `form:"limit"`          // page size
+	Continue       string `form:"continue"`       // pagination cursor
 }
 
 // List GET /clusters
@@ -161,7 +161,7 @@ func (c *ClusterController) Delete() (gin.HandlerFunc, error) {
 	}, nil
 }
 
-// UpdateAddonsRequest 更新集群插件请求
+// UpdateAddonsRequest represents update cluster addons request
 type UpdateAddonsRequest struct {
 	Addons []v1alpha1.ClusterAddon `json:"addons" binding:"required"`
 }
@@ -218,7 +218,7 @@ func (c *ClusterController) GetAddons() (gin.HandlerFunc, error) {
 }
 
 // Create POST /clusters
-// Cluster 由 agent 自动创建，portal 只支持批准/拒绝，不支持直接创建
+// Cluster is automatically created by agent, portal only supports approve/reject, direct creation is not supported
 func (c *ClusterController) Create() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
 		utils.BadRequest(ctx, "clusters are created by agents, please use approve/reject API")

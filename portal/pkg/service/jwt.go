@@ -7,7 +7,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// Claims JWT 声明
+// Claims JWT claims
 type Claims struct {
 	UserID   uint   `json:"userId"`
 	Username string `json:"username"`
@@ -16,14 +16,14 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// JWTService JWT 服务
+// JWTService JWT service
 type JWTService struct {
 	secret              []byte
 	expireDuration      time.Duration
 	resetExpireDuration time.Duration
 }
 
-// NewJWTService 创建 JWT 服务
+// NewJWTService creates JWT service
 func NewJWTService(secret string, expire, resetExpire time.Duration) *JWTService {
 	return &JWTService{
 		secret:              []byte(secret),
@@ -32,7 +32,7 @@ func NewJWTService(secret string, expire, resetExpire time.Duration) *JWTService
 	}
 }
 
-// GenerateToken 生成 JWT Token
+// GenerateToken generates JWT token
 func (s *JWTService) GenerateToken(userID uint, username string, roleID uint, roleName string) (string, error) {
 	now := time.Now()
 	claims := Claims{
@@ -53,7 +53,7 @@ func (s *JWTService) GenerateToken(userID uint, username string, roleID uint, ro
 	return token.SignedString(s.secret)
 }
 
-// ParseToken 解析 JWT Token
+// ParseToken parses JWT token
 func (s *JWTService) ParseToken(tokenString string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -73,12 +73,12 @@ func (s *JWTService) ParseToken(tokenString string) (*Claims, error) {
 	return nil, errors.New("invalid token")
 }
 
-// GetExpireDuration 获取过期时间
+// GetExpireDuration gets expiration duration
 func (s *JWTService) GetExpireDuration() time.Duration {
 	return s.expireDuration
 }
 
-// GetResetExpireDuration 获取重置密码过期时间
+// GetResetExpireDuration gets password reset expiration duration
 func (s *JWTService) GetResetExpireDuration() time.Duration {
 	return s.resetExpireDuration
 }

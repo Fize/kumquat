@@ -40,7 +40,7 @@ func (c *ApplicationController) Version() string {
 }
 
 // Middlewares returns the middlewares for this controller
-// Application 管理：Admin/Member 可读写，Guest 只读
+// Application management: Admin/Member can read/write, Guest read-only
 func (c *ApplicationController) Middlewares() []ginserver.MiddlewaresObject {
 	return []ginserver.MiddlewaresObject{
 		{
@@ -60,13 +60,13 @@ func (c *ApplicationController) Middlewares() []ginserver.MiddlewaresObject {
 	}
 }
 
-// ListApplicationsRequest 应用列表查询参数
+// ListApplicationsRequest represents application list query parameters
 type ListApplicationsRequest struct {
 	Namespace       string `form:"namespace"`
 	SchedulingPhase string `form:"schedulingPhase"` // Pending, Scheduling, Scheduled, Descheduling, Failed
 	HealthPhase     string `form:"healthPhase"`     // Healthy, Progressing, Degraded, Unknown
-	Limit           int64  `form:"limit"`            // 分页大小
-	Continue        string `form:"continue"`         // 分页游标
+	Limit           int64  `form:"limit"`            // page size
+	Continue        string `form:"continue"`         // pagination cursor
 }
 
 // List GET /applications
@@ -153,7 +153,7 @@ func (c *ApplicationController) Update() (gin.HandlerFunc, error) {
 			return
 		}
 
-		// Ensure the name and namespace match the URL parameters
+		// Ensure that name and namespace match URL parameters
 		app.Name = name
 		app.Namespace = namespace
 
@@ -195,7 +195,7 @@ func (c *ApplicationController) Delete() (gin.HandlerFunc, error) {
 	}, nil
 }
 
-// SuspendRequest 暂停/恢复应用请求
+// SuspendRequest represents suspend/resume application request
 type SuspendRequest struct {
 	Suspend bool `json:"suspend"`
 }
@@ -234,7 +234,7 @@ func (c *ApplicationController) Suspend() (gin.HandlerFunc, error) {
 	}, nil
 }
 
-// ScaleRequest 扩缩容请求
+// ScaleRequest represents scale application request
 type ScaleRequest struct {
 	Replicas int32 `json:"replicas" binding:"required,min=0"`
 }
@@ -272,7 +272,7 @@ func (c *ApplicationController) Scale() (gin.HandlerFunc, error) {
 // ensure ObjectReference implements client.Object
 var _ client.Object = &appsv1alpha1.Application{}
 
-// Patch 使用 patch 方式更新应用（支持部分更新）
+// Patch uses patch method to update application (supports partial update)
 // PATCH /applications/:namespace/:name
 func (c *ApplicationController) Patch() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
@@ -283,14 +283,14 @@ func (c *ApplicationController) Patch() (gin.HandlerFunc, error) {
 			return
 		}
 
-		// 获取 patch 数据
+		// Get patch data
 		patchData, err := ctx.GetRawData()
 		if err != nil {
 			utils.BadRequest(ctx, "invalid patch data")
 			return
 		}
 
-		// 执行 patch
+		// Execute patch
 		if err := c.svc.Patch(ctx.Request.Context(), &service.PatchApplicationRequest{
 			Name:      name,
 			Namespace: namespace,

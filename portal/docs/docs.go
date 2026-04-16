@@ -1406,7 +1406,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/api/v1",
 	Schemes:          []string{},
 	Title:            "Kumquat Portal API",
-	Description:      "Kumquat 多集群应用管理平台 - 用户认证与权限管理 API",
+	Description:      "Kumquat Multi-Cluster Application Management Platform - User Authentication and Authorization API",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

@@ -1,42 +1,40 @@
 # Armory
 
-[中文](README_zh.md)
+Base Docker image builder for Kumquat, providing unified runtime base images for all subprojects.
 
-Base Docker image builds for Kumquat, providing unified runtime base images for all sub-projects.
-
-## Structure
+## Directory Structure
 
 ```
 docker/
-├── alpine/           Alpine base image (bash, curl, jq, tini, USTC mirror)
+├── alpine/           Alpine base image (bash, curl, jq, tini, automatic USTC mirror switching)
 │   ├── Dockerfile.template
 │   └── init.sh
-├── golang/           Go on Alpine
+├── golang/            Go image based on Alpine
 │   └── Dockerfile.template
-├── node/             Node.js on Alpine
+├── node/              Node.js image based on Alpine
 │   └── Dockerfile.template
-├── python/           Python on Alpine
+├── python/            Python image based on Alpine
 │   └── Dockerfile.template
 ├── kubectl/          DevOps tools: kubectl, helm, kustomize
 │   └── Dockerfile.template
-├── builder/          Build tools: gcc, make, cmake, etc.
+├── builder/           Build tools: gcc, make, cmake, etc.
 │   └── Dockerfile.template
-├── dind/             Docker-in-Docker for CI/CD
+├── dind/             Docker-in-Docker, for CI/CD
 │   ├── Dockerfile.template
 │   └── entrypoint.sh
-├── rust/             Rust on Alpine
+├── rust/              Rust image based on Alpine
 │   └── Dockerfile.template
-└── java/             OpenJDK on Alpine
+└── java/              OpenJDK image based on Alpine
     └── Dockerfile.template
 ```
 
 ## Quick Start
 
 ```bash
-# Build all images with default versions
+# Build all images (using default versions)
 make all
 
-# Build individual images
+# Build a single image
 make alpine
 make golang
 make node
@@ -47,25 +45,25 @@ make dind
 make rust
 make java
 
-# Build with custom versions
+# Build a specific version
 make alpine ALPINE_VERSION=3.20.5
 make golang GO_VERSION=1.23.6
 make kubectl KUBECTL_VERSION=1.30.0 HELM_VERSION=3.15.0
 
-# Push to registry
+# Push to image registry
 REPO=yourrepo make push-all
 
-# List available images
+# View available images
 make list
 ```
 
-## Images
+## Image List
 
-### Base Image
+### Base Images
 
 | Image | Base | Features |
 |-------|------|----------|
-| `alpine` | Alpine Linux | bash, curl, jq, tini (PID 1), USTC mirror auto-switch |
+| `alpine` | Alpine Linux | bash, curl, jq, tini (PID 1), automatic USTC mirror switching |
 
 ### Language Runtimes
 
@@ -107,10 +105,10 @@ make list
 
 ## Design Choices
 
-- **tini** over s6-overlay: Lightweight PID 1 for zombie process reaping only.
-- **Template-based**: Single template per image type; `Makefile` handles variable substitution.
-- **`# TAGS` directive**: Add `# TAGS v1 latest` at top of Dockerfile for multiple tags.
-- **Incremental build**: `bootstrap.sh` only builds images whose Dockerfiles changed.
+- **tini** is preferred over s6-overlay: lightweight PID 1 for zombie process reaping only.
+- **Templating**: one template per image type, `Makefile` handles variable substitution.
+- **`# TAGS` directive**: Adding `# TAGS v1 latest` at the top of a Dockerfile allows multiple tags.
+- **Incremental builds**: `bootstrap.sh` only builds images whose Dockerfile has changed.
 
 ## License
 

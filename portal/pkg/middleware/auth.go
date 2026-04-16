@@ -15,17 +15,17 @@ const (
 	ContextKeyRoleName = "roleName"
 )
 
-// AuthMiddleware JWT 认证中间件
+// AuthMiddleware JWT authentication middleware
 type AuthMiddleware struct {
 	jwtService *service.JWTService
 }
 
-// NewAuthMiddleware 创建认证中间件
+// NewAuthMiddleware creates authentication middleware
 func NewAuthMiddleware(jwtService *service.JWTService) *AuthMiddleware {
 	return &AuthMiddleware{jwtService: jwtService}
 }
 
-// Auth JWT认证中间件
+// Auth JWT authentication middleware
 func (m *AuthMiddleware) Auth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -58,7 +58,7 @@ func (m *AuthMiddleware) Auth() gin.HandlerFunc {
 	}
 }
 
-// GetUserID 获取用户ID
+// GetUserID gets user ID
 func GetUserID(c *gin.Context) uint {
 	if v, exists := c.Get(ContextKeyUserID); exists {
 		return v.(uint)
@@ -66,7 +66,7 @@ func GetUserID(c *gin.Context) uint {
 	return 0
 }
 
-// GetRoleID 获取角色ID
+// GetRoleID gets role ID
 func GetRoleID(c *gin.Context) uint {
 	if v, exists := c.Get(ContextKeyRoleID); exists {
 		return v.(uint)
@@ -74,7 +74,7 @@ func GetRoleID(c *gin.Context) uint {
 	return 0
 }
 
-// GetRoleName 获取角色名
+// GetRoleName gets role name
 func GetRoleName(c *gin.Context) string {
 	if v, exists := c.Get(ContextKeyRoleName); exists {
 		return v.(string)
@@ -82,7 +82,7 @@ func GetRoleName(c *gin.Context) string {
 	return ""
 }
 
-// RequireRole 要求特定角色（粗粒度鉴权）
+// RequireRole requires specific role (coarse-grained authorization)
 func RequireRole(roles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		roleName := GetRoleName(c)
@@ -97,7 +97,7 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 	}
 }
 
-// RequirePermission 要求特定权限（细粒度鉴权，基于 Permission 表）
+// RequirePermission requires specific permission (fine-grained authorization, based on Permission table)
 func RequirePermission(roleService *service.RoleService, resource, action string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		roleID := GetRoleID(c)

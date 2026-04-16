@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// UserRepository 用户 Repository 接口
+// UserRepository user repository interface
 type UserRepository interface {
 	GetByID(ctx context.Context, id uint) (*model.User, error)
 	GetByUsername(ctx context.Context, username string) (*model.User, error)
@@ -22,13 +22,13 @@ type UserRepository interface {
 	Search(ctx context.Context, keyword string, page, size int) ([]model.User, int64, error)
 }
 
-// userRepository 用户 Repository 实现
+// userRepository user repository implementation
 type userRepository struct {
 	*BaseRepository[model.User]
 	db *gorm.DB
 }
 
-// NewUserRepository 创建用户 Repository
+// NewUserRepository creates user repository
 func NewUserRepository(db *gorm.DB) UserRepository {
 	return &userRepository{
 		BaseRepository: NewBaseRepository[model.User](db),
@@ -36,7 +36,7 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 	}
 }
 
-// GetByUsername 根据用户名获取
+// GetByUsername gets by username
 func (r *userRepository) GetByUsername(ctx context.Context, username string) (*model.User, error) {
 	var user model.User
 	if err := r.db.WithContext(ctx).Where("username = ?", username).First(&user).Error; err != nil {
@@ -45,7 +45,7 @@ func (r *userRepository) GetByUsername(ctx context.Context, username string) (*m
 	return &user, nil
 }
 
-// GetByEmail 根据邮箱获取
+// GetByEmail gets by email
 func (r *userRepository) GetByEmail(ctx context.Context, email string) (*model.User, error) {
 	var user model.User
 	if err := r.db.WithContext(ctx).Where("email = ?", email).First(&user).Error; err != nil {
@@ -54,7 +54,7 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*model.U
 	return &user, nil
 }
 
-// ExistsByUsername 检查用户名是否存在
+// ExistsByUsername checks if username exists
 func (r *userRepository) ExistsByUsername(ctx context.Context, username string) (bool, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("username = ?", username).Count(&count).Error; err != nil {
@@ -63,7 +63,7 @@ func (r *userRepository) ExistsByUsername(ctx context.Context, username string) 
 	return count > 0, nil
 }
 
-// ExistsByEmail 检查邮箱是否存在
+// ExistsByEmail checks if email exists
 func (r *userRepository) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("email = ?", email).Count(&count).Error; err != nil {
@@ -72,7 +72,7 @@ func (r *userRepository) ExistsByEmail(ctx context.Context, email string) (bool,
 	return count > 0, nil
 }
 
-// GetByID 重写以支持 Preload
+// GetByID override to support Preload
 func (r *userRepository) GetByID(ctx context.Context, id uint) (*model.User, error) {
 	var user model.User
 	if err := r.db.WithContext(ctx).Preload("Role").Preload("Module").First(&user, id).Error; err != nil {
@@ -81,7 +81,7 @@ func (r *userRepository) GetByID(ctx context.Context, id uint) (*model.User, err
 	return &user, nil
 }
 
-// List 重写以支持 Preload
+// List override to support Preload
 func (r *userRepository) List(ctx context.Context, page, size int) ([]model.User, int64, error) {
 	var users []model.User
 	var total int64
@@ -99,7 +99,7 @@ func (r *userRepository) List(ctx context.Context, page, size int) ([]model.User
 	return users, total, nil
 }
 
-// CountByRoleID 统计指定角色的用户数
+// CountByRoleID counts users with specified role
 func (r *userRepository) CountByRoleID(ctx context.Context, roleID uint) (int64, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("role_id = ?", roleID).Count(&count).Error; err != nil {
@@ -108,7 +108,7 @@ func (r *userRepository) CountByRoleID(ctx context.Context, roleID uint) (int64,
 	return count, nil
 }
 
-// Search 搜索用户
+// Search searches users
 func (r *userRepository) Search(ctx context.Context, keyword string, page, size int) ([]model.User, int64, error) {
 	var users []model.User
 	var total int64

@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-// failingClient 是一个 mock client，可以在指定操作上返回错误
+// failingClient is a mock client that can return errors on specified operations
 type failingClient struct {
 	client.Client
 	listErr   error
@@ -20,7 +20,7 @@ type failingClient struct {
 	updateErr error
 	deleteErr error
 	patchErr  error
-	statusErr error // Status().Update() 的错误
+	statusErr error // Status().Update() error
 }
 
 func newFailingClient(scheme *runtime.Scheme, objects ...client.Object) *failingClient {
@@ -90,7 +90,7 @@ func (f *failingClient) Status() client.StatusWriter {
 	return f.Client.Status()
 }
 
-// helper: 构造各种 K8s API 错误
+// helper: construct various K8s API errors
 func newK8sNotFound(resource, name string) error {
 	return apierrors.NewNotFound(schema.GroupResource{Group: "", Resource: resource}, name)
 }

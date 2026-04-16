@@ -11,18 +11,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// RoleService 角色服务
+// RoleService role service
 type RoleService struct {
 	repo repository.RoleRepository
-	db   *gorm.DB // 保留用于事务
+	db   *gorm.DB // reserved for transaction
 }
 
-// NewRoleService 创建角色服务
+// NewRoleService creates role service
 func NewRoleService(repo repository.RoleRepository, db *gorm.DB) *RoleService {
 	return &RoleService{repo: repo, db: db}
 }
 
-// List 获取角色列表
+// List gets role list
 func (s *RoleService) List(ctx context.Context) ([]model.Role, error) {
 	roles, err := s.repo.List(ctx)
 	if err != nil {
@@ -32,7 +32,7 @@ func (s *RoleService) List(ctx context.Context) ([]model.Role, error) {
 	return roles, nil
 }
 
-// GetByID 根据ID获取角色
+// GetByID gets role by ID
 func (s *RoleService) GetByID(ctx context.Context, id uint) (*model.Role, error) {
 	role, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -44,7 +44,7 @@ func (s *RoleService) GetByID(ctx context.Context, id uint) (*model.Role, error)
 	return role, nil
 }
 
-// GetPermissions 获取角色权限
+// GetPermissions gets role permissions
 func (s *RoleService) GetPermissions(ctx context.Context, roleID uint) ([]model.Permission, error) {
 	_, err := s.repo.GetByID(ctx, roleID)
 	if err != nil {
@@ -60,7 +60,7 @@ func (s *RoleService) GetPermissions(ctx context.Context, roleID uint) ([]model.
 	return perms, nil
 }
 
-// InitRoles 初始化预定义角色和权限（使用事务）
+// InitRoles initializes predefined roles and permissions (using transaction)
 func (s *RoleService) InitRoles() error {
 	ctx := context.Background()
 
@@ -81,7 +81,7 @@ func (s *RoleService) InitRoles() error {
 				}
 			}
 
-			// 初始化权限：仅当角色无权限记录时才写入预定义权限
+			// Initialize permissions: only write predefined permissions when role has no permission records
 			var count int64
 			if err := tx.Model(&model.Permission{}).Where("role_id = ?", role.ID).Count(&count).Error; err != nil {
 				return err
@@ -106,8 +106,8 @@ func (s *RoleService) InitRoles() error {
 	})
 }
 
-// CheckPermission 检查角色权限
-// 逻辑：查询该角色的所有权限规则，逐条匹配，deny 优先于 allow
+// CheckPermission checks role permission
+// Logic: query all permission rules for the role, match each rule, deny takes priority over allow
 func (s *RoleService) CheckPermission(ctx context.Context, roleID uint, resource, action string) (bool, error) {
 	perms, err := s.repo.GetPermissionsByRoleID(ctx, roleID)
 	if err != nil {

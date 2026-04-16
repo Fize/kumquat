@@ -123,7 +123,7 @@ info:
   contact:
     email: support@kumquat.io
     name: API Support
-  description: Kumquat 多集群应用管理平台 - 用户认证与权限管理 API
+  description: Kumquat Multi-Cluster Application Management Platform - User Authentication and Authorization API
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html

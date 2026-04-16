@@ -18,7 +18,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// setupRoleTestDB 创建测试数据库和依赖
+// setupRoleTestDB creates test database and dependencies
 func setupRoleTestDB(t *testing.T) (*gin.Engine, *service.RoleService, *middleware.AuthMiddleware, *gorm.DB, *service.JWTService) {
 	gin.SetMode(gin.TestMode)
 
@@ -28,12 +28,12 @@ func setupRoleTestDB(t *testing.T) (*gin.Engine, *service.RoleService, *middlewa
 	err = db.AutoMigrate(&model.User{}, &model.Role{}, &model.Permission{}, &model.Module{})
 	require.NoError(t, err)
 
-	// 创建角色
+	// Create role
 	adminRole := &model.Role{Name: model.RoleAdmin}
 	err = db.Create(adminRole).Error
 	require.NoError(t, err)
 
-	// 创建权限
+	// Create permission
 	perm := &model.Permission{RoleID: adminRole.ID, Resource: "*", Action: "*", Effect: "allow"}
 	err = db.Create(perm).Error
 	require.NoError(t, err)
@@ -51,7 +51,7 @@ func setupRoleTestDB(t *testing.T) (*gin.Engine, *service.RoleService, *middlewa
 func TestRoleController_List_Success(t *testing.T) {
 	router, roleSvc, authMiddleware, db, jwtSvc := setupRoleTestDB(t)
 
-	// 创建 admin 用户
+	// Create admin user
 	admin := &model.User{Username: "admin", Email: "admin@example.com", RoleID: 1}
 	admin.SetPassword("admin123")
 	err := db.Create(admin).Error

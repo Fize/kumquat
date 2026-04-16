@@ -18,20 +18,20 @@ func NewWorkspaceService(k8sClient client.Client) *WorkspaceService {
 	return &WorkspaceService{k8sClient: k8sClient}
 }
 
-// ListWorkspacesRequest 工作空间列表查询参数
+// ListWorkspacesRequest workspace list query parameters
 type ListWorkspacesRequest struct {
-	Cluster  string // 筛选特定集群上的工作空间
-	Limit    int64  // 分页大小，0 表示不限制
-	Continue string // 分页游标
+	Cluster  string // filter workspaces on a specific cluster
+	Limit    int64  // page size, 0 means no limit
+	Continue string // pagination cursor
 }
 
-// ListWorkspacesResponse 工作空间列表响应
+// ListWorkspacesResponse workspace list response
 type ListWorkspacesResponse struct {
 	Items    []workspacev1alpha1.Workspace `json:"items"`
-	Continue string                        `json:"continue,omitempty"` // 下一页游标
+	Continue string                        `json:"continue,omitempty"` // next page cursor
 }
 
-// List 列出所有工作空间
+// List lists all workspaces
 func (s *WorkspaceService) List(ctx context.Context, req *ListWorkspacesRequest) (*ListWorkspacesResponse, error) {
 	workspaceList := &workspacev1alpha1.WorkspaceList{}
 	opts := []client.ListOption{}
@@ -46,11 +46,11 @@ func (s *WorkspaceService) List(ctx context.Context, req *ListWorkspacesRequest)
 		return nil, wrapK8sError(err, "failed to list workspaces")
 	}
 
-	// 过滤
+	// Filter
 	var filtered []workspacev1alpha1.Workspace
 	for _, ws := range workspaceList.Items {
 		if req.Cluster != "" {
-			// 检查工作空间是否应用到指定集群
+			// Check if workspace is applied to the specified cluster
 			found := false
 			for _, cluster := range ws.Status.AppliedClusters {
 				if cluster == req.Cluster {
@@ -71,7 +71,7 @@ func (s *WorkspaceService) List(ctx context.Context, req *ListWorkspacesRequest)
 	}, nil
 }
 
-// Get 获取工作空间详情
+// Get gets workspace details
 func (s *WorkspaceService) Get(ctx context.Context, name string) (*workspacev1alpha1.Workspace, error) {
 	workspace := &workspacev1alpha1.Workspace{}
 	if err := s.k8sClient.Get(ctx, client.ObjectKey{Name: name}, workspace); err != nil {
@@ -80,12 +80,12 @@ func (s *WorkspaceService) Get(ctx context.Context, name string) (*workspacev1al
 	return workspace, nil
 }
 
-// CreateWorkspaceRequest 创建工作空间请求
+// CreateWorkspaceRequest create workspace request
 type CreateWorkspaceRequest struct {
 	Workspace *workspacev1alpha1.Workspace
 }
 
-// Create 创建工作空间
+// Create creates a workspace
 func (s *WorkspaceService) Create(ctx context.Context, req *CreateWorkspaceRequest) error {
 	if err := s.k8sClient.Create(ctx, req.Workspace); err != nil {
 		return wrapK8sError(err, "failed to create workspace")
@@ -93,12 +93,12 @@ func (s *WorkspaceService) Create(ctx context.Context, req *CreateWorkspaceReque
 	return nil
 }
 
-// UpdateWorkspaceRequest 更新工作空间请求
+// UpdateWorkspaceRequest update workspace request
 type UpdateWorkspaceRequest struct {
 	Workspace *workspacev1alpha1.Workspace
 }
 
-// Update 更新工作空间
+// Update updates a workspace
 func (s *WorkspaceService) Update(ctx context.Context, req *UpdateWorkspaceRequest) error {
 	if err := s.k8sClient.Update(ctx, req.Workspace); err != nil {
 		return wrapK8sError(err, "failed to update workspace")
@@ -106,7 +106,7 @@ func (s *WorkspaceService) Update(ctx context.Context, req *UpdateWorkspaceReque
 	return nil
 }
 
-// Delete 删除工作空间
+// Delete deletes a workspace
 func (s *WorkspaceService) Delete(ctx context.Context, name string) error {
 	workspace := &workspacev1alpha1.Workspace{}
 	workspace.Name = name
@@ -116,7 +116,7 @@ func (s *WorkspaceService) Delete(ctx context.Context, name string) error {
 	return nil
 }
 
-// GetClustersByWorkspace 获取工作空间已应用的集群列表
+// GetClustersByWorkspace gets the list of clusters the workspace is applied to
 func (s *WorkspaceService) GetClustersByWorkspace(ctx context.Context, name string) ([]string, []workspacev1alpha1.ClusterError, error) {
 	workspace, err := s.Get(ctx, name)
 	if err != nil {

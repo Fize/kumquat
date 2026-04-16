@@ -11,13 +11,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RoleController 角色控制器，实现 RestController 接口
+// RoleController implements RestController interface
 type RoleController struct {
 	svc           *service.RoleService
 	authMiddleware *middleware.AuthMiddleware
 }
 
-// NewRoleController 创建角色控制器
+// NewRoleController creates a new role controller
 func NewRoleController(roleSvc *service.RoleService, authMiddleware *middleware.AuthMiddleware) *RoleController {
 	return &RoleController{svc: roleSvc, authMiddleware: authMiddleware}
 }
@@ -34,15 +34,15 @@ func (c *RoleController) Middlewares() []ginserver.MiddlewaresObject {
 	}
 }
 
-// List 获取角色列表
-// @Summary 获取角色列表
-// @Description 获取所有角色列表，需要 role:read 权限
+// List retrieves role list
+// @Summary Get role list
+// @Description Get all role list, requires role:read permission
 // @Tags roles
 // @Accept json
 // @Produce json
 // @Security Bearer
 // @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":[{role}]}"
-// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"unauthorized\"}"
 // @Router /roles [get]
 func (c *RoleController) List() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
@@ -60,18 +60,18 @@ func (c *RoleController) List() (gin.HandlerFunc, error) {
 	}, nil
 }
 
-// Get 获取单个角色
-// @Summary 根据 ID 获取角色信息
-// @Description 获取指定 ID 的角色详情
+// Get retrieves a single role
+// @Summary Get role information by ID
+// @Description Get role details by specified ID
 // @Tags roles
 // @Accept json
 // @Produce json
 // @Security Bearer
-// @Param id path int true "角色ID"
+// @Param id path int true "role ID"
 // @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":{role}}"
-// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"无效的角色ID\"}"
-// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
-// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"角色不存在\"}"
+// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"invalid role ID\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"unauthorized\"}"
+// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"role not found\"}"
 // @Router /roles/{id} [get]
 func (c *RoleController) Get() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {

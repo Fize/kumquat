@@ -1,6 +1,6 @@
 package errors
 
-// 错误码定义
+// Error code definitions
 const (
 	CodeOK         = 0
 	CodeBadRequest = 400
@@ -10,7 +10,7 @@ const (
 	CodeConflict = 409
 	CodeInternal = 500
 
-	// 用户相关错误码 (1000-1099)
+	// User related error codes (1000-1099)
 	CodeUserNotFound      = 1001
 	CodeUserExists        = 1002
 	CodeInvalidPassword   = 1003
@@ -18,24 +18,24 @@ const (
 	CodeEmailExists       = 1005
 	CodeLastAdmin         = 1006
 
-	// 角色相关错误码 (1100-1199)
+	// Role related error codes (1100-1199)
 	CodeRoleNotFound      = 1101
 	CodeDefaultRoleNotFound = 1102
 
-	// 模块相关错误码 (1200-1299)
+	// Module related error codes (1200-1299)
 	CodeModuleNotFound    = 1201
 	CodeModuleHasChildren = 1202
 
-	// 项目相关错误码 (1300-1399)
+	// Project related error codes (1300-1399)
 	CodeProjectNotFound   = 1301
 
-	// 认证相关错误码 (1400-1499)
+	// Authentication related error codes (1400-1499)
 	CodeInvalidToken      = 1401
 	CodeTokenExpired      = 1402
 	CodeMissingAuthHeader = 1403
 )
 
-// 错误消息映射
+// Error message mapping
 var codeMessages = map[int]string{
 	CodeOK:         "success",
 	CodeBadRequest: "bad request",
@@ -65,7 +65,7 @@ var codeMessages = map[int]string{
 	CodeMissingAuthHeader: "missing authorization header",
 }
 
-// GetMessage 获取错误码对应的默认消息
+// GetMessage gets default message for error code
 func GetMessage(code int) string {
 	if msg, ok := codeMessages[code]; ok {
 		return msg

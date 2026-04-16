@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// ProjectRepository 项目 Repository 接口
+// ProjectRepository project repository interface
 type ProjectRepository interface {
 	GetByID(ctx context.Context, id uint) (*model.Project, error)
 	List(ctx context.Context, page, size int) ([]model.Project, int64, error)
@@ -18,13 +18,13 @@ type ProjectRepository interface {
 	ExistsModule(ctx context.Context, moduleID uint) (bool, error)
 }
 
-// projectRepository 项目 Repository 实现
+// projectRepository project repository implementation
 type projectRepository struct {
 	*BaseRepository[model.Project]
 	db *gorm.DB
 }
 
-// NewProjectRepository 创建项目 Repository
+// NewProjectRepository creates project repository
 func NewProjectRepository(db *gorm.DB) ProjectRepository {
 	return &projectRepository{
 		BaseRepository: NewBaseRepository[model.Project](db),
@@ -32,7 +32,7 @@ func NewProjectRepository(db *gorm.DB) ProjectRepository {
 	}
 }
 
-// GetByID 重写以支持 Preload
+// GetByID override to support Preload
 func (r *projectRepository) GetByID(ctx context.Context, id uint) (*model.Project, error) {
 	var project model.Project
 	if err := r.db.WithContext(ctx).Preload("Module").First(&project, id).Error; err != nil {
@@ -41,7 +41,7 @@ func (r *projectRepository) GetByID(ctx context.Context, id uint) (*model.Projec
 	return &project, nil
 }
 
-// List 重写以支持 Preload 和排序
+// List override to support Preload and sorting
 func (r *projectRepository) List(ctx context.Context, page, size int) ([]model.Project, int64, error) {
 	var projects []model.Project
 	var total int64
@@ -60,7 +60,7 @@ func (r *projectRepository) List(ctx context.Context, page, size int) ([]model.P
 	return projects, total, nil
 }
 
-// ListByModuleID 根据模块ID获取项目
+// ListByModuleID gets projects by module ID
 func (r *projectRepository) ListByModuleID(ctx context.Context, moduleID uint, page, size int) ([]model.Project, int64, error) {
 	var projects []model.Project
 	var total int64
@@ -79,7 +79,7 @@ func (r *projectRepository) ListByModuleID(ctx context.Context, moduleID uint, p
 	return projects, total, nil
 }
 
-// ExistsModule 检查模块是否存在
+// ExistsModule checks if module exists
 func (r *projectRepository) ExistsModule(ctx context.Context, moduleID uint) (bool, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&model.Module{}).Where("id = ?", moduleID).Count(&count).Error; err != nil {

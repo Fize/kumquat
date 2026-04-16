@@ -5,7 +5,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-// wrapK8sError 将 K8s API 错误转换为 AppError，保留原始错误用于链式解包
+// wrapK8sError wraps K8s API errors to AppError, preserving original error for chain unwrapping
 func wrapK8sError(err error, message string) error {
 	if err == nil {
 		return nil

@@ -21,21 +21,21 @@ func NewClusterService(k8sClient client.Client) *ClusterService {
 	return &ClusterService{k8sClient: k8sClient}
 }
 
-// ListClustersRequest 集群列表查询参数
+// ListClustersRequest cluster list query parameters
 type ListClustersRequest struct {
 	State          string // Pending, Ready, Offline, Rejected
 	ConnectionMode string // Hub, Edge
-	Limit          int64  // 分页大小，0 表示不限制
-	Continue       string // 分页游标
+	Limit          int64  // page size, 0 means no limit
+	Continue       string // pagination cursor
 }
 
-// ListClustersResponse 集群列表响应
+// ListClustersResponse cluster list response
 type ListClustersResponse struct {
 	Items    []clusterv1alpha1.Cluster `json:"items"`
-	Continue string                    `json:"continue,omitempty"` // 下一页游标
+	Continue string                    `json:"continue,omitempty"` // next page cursor
 }
 
-// List 列出所有集群
+// List lists all clusters
 func (s *ClusterService) List(ctx context.Context, req *ListClustersRequest) (*ListClustersResponse, error) {
 	clusterList := &clusterv1alpha1.ClusterList{}
 	opts := []client.ListOption{}
@@ -50,7 +50,7 @@ func (s *ClusterService) List(ctx context.Context, req *ListClustersRequest) (*L
 		return nil, wrapK8sError(err, "failed to list clusters")
 	}
 
-	// 过滤
+	// Filter
 	var filtered []clusterv1alpha1.Cluster
 	for _, cluster := range clusterList.Items {
 		if req.State != "" && string(cluster.Status.State) != req.State {
@@ -68,7 +68,7 @@ func (s *ClusterService) List(ctx context.Context, req *ListClustersRequest) (*L
 	}, nil
 }
 
-// Get 获取单个集群详情
+// Get gets single cluster details
 func (s *ClusterService) Get(ctx context.Context, name string) (*clusterv1alpha1.Cluster, error) {
 	cluster := &clusterv1alpha1.Cluster{}
 	if err := s.k8sClient.Get(ctx, client.ObjectKey{Name: name}, cluster); err != nil {
@@ -77,12 +77,12 @@ func (s *ClusterService) Get(ctx context.Context, name string) (*clusterv1alpha1
 	return cluster, nil
 }
 
-// ApproveClusterRequest 批准集群请求
+// ApproveClusterRequest approve cluster request
 type ApproveClusterRequest struct {
 	Name string
 }
 
-// Approve 批准集群（Pending -> Ready）
+// Approve approves cluster (Pending -> Ready)
 func (s *ClusterService) Approve(ctx context.Context, req *ApproveClusterRequest) error {
 	cluster := &clusterv1alpha1.Cluster{}
 	if err := s.k8sClient.Get(ctx, client.ObjectKey{Name: req.Name}, cluster); err != nil {
@@ -100,12 +100,12 @@ func (s *ClusterService) Approve(ctx context.Context, req *ApproveClusterRequest
 	return nil
 }
 
-// RejectClusterRequest 拒绝集群请求
+// RejectClusterRequest reject cluster request
 type RejectClusterRequest struct {
 	Name string
 }
 
-// Reject 拒绝集群
+// Reject rejects cluster
 func (s *ClusterService) Reject(ctx context.Context, req *RejectClusterRequest) error {
 	cluster := &clusterv1alpha1.Cluster{}
 	if err := s.k8sClient.Get(ctx, client.ObjectKey{Name: req.Name}, cluster); err != nil {
@@ -123,7 +123,7 @@ func (s *ClusterService) Reject(ctx context.Context, req *RejectClusterRequest) 
 	return nil
 }
 
-// Delete 删除集群
+// Delete deletes cluster
 func (s *ClusterService) Delete(ctx context.Context, name string) error {
 	cluster := &clusterv1alpha1.Cluster{}
 	cluster.Name = name
@@ -133,13 +133,13 @@ func (s *ClusterService) Delete(ctx context.Context, name string) error {
 	return nil
 }
 
-// UpdateClusterAddonsRequest 更新集群插件请求
+// UpdateClusterAddonsRequest update cluster addons request
 type UpdateClusterAddonsRequest struct {
 	Name   string
 	Addons []clusterv1alpha1.ClusterAddon
 }
 
-// UpdateAddons 更新集群插件配置
+// UpdateAddons updates cluster addons configuration
 func (s *ClusterService) UpdateAddons(ctx context.Context, req *UpdateClusterAddonsRequest) error {
 	patchData, _ := json.Marshal(map[string]interface{}{
 		"spec": map[string]interface{}{
@@ -157,7 +157,7 @@ func (s *ClusterService) UpdateAddons(ctx context.Context, req *UpdateClusterAdd
 	return nil
 }
 
-// GetClusterAddons 获取集群插件配置
+// GetClusterAddons gets cluster addons configuration
 func (s *ClusterService) GetClusterAddons(ctx context.Context, name string) ([]clusterv1alpha1.ClusterAddon, []clusterv1alpha1.AddonStatus, error) {
 	cluster, err := s.Get(ctx, name)
 	if err != nil {

@@ -5,7 +5,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Migrate 执行数据库迁移
+// Migrate performs database migration
 func Migrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&model.User{},
