@@ -1,0 +1,937 @@
+basePath: /api/v1
+definitions:
+  handler.ChangePasswordRequest:
+    properties:
+      newPassword:
+        example: newpass123
+        maxLength: 32
+        minLength: 6
+        type: string
+      oldPassword:
+        example: oldpass123
+        type: string
+    required:
+    - newPassword
+    - oldPassword
+    type: object
+  handler.CreateModuleRequest:
+    properties:
+      name:
+        example: infrastructure
+        type: string
+      parent_id:
+        example: 1
+        type: integer
+      sort:
+        example: 0
+        type: integer
+    required:
+    - name
+    type: object
+  handler.CreateProjectRequest:
+    type: object
+  handler.CreateUserRequest:
+    properties:
+      email:
+        example: john@example.com
+        type: string
+      module_id:
+        example: 1
+        type: integer
+      nickname:
+        example: John
+        type: string
+      password:
+        example: password123
+        maxLength: 32
+        minLength: 6
+        type: string
+      role_id:
+        example: 2
+        type: integer
+      username:
+        example: john_doe
+        maxLength: 32
+        minLength: 3
+        type: string
+    required:
+    - email
+    - password
+    - role_id
+    - username
+    type: object
+  handler.LoginRequest:
+    properties:
+      password:
+        example: admin123
+        type: string
+      username:
+        example: admin
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  handler.RegisterRequest:
+    properties:
+      email:
+        example: john@example.com
+        type: string
+      nickname:
+        example: John
+        type: string
+      password:
+        example: password123
+        maxLength: 32
+        minLength: 6
+        type: string
+      username:
+        example: john_doe
+        maxLength: 32
+        minLength: 3
+        type: string
+    required:
+    - email
+    - password
+    - username
+    type: object
+  handler.UpdateModuleRequest:
+    properties:
+      name:
+        example: infrastructure-updated
+        type: string
+      sort:
+        example: 1
+        type: integer
+    type: object
+  handler.UpdateProjectRequest:
+    type: object
+  handler.UpdateUserRequest:
+    properties:
+      module_id:
+        example: 1
+        type: integer
+      nickname:
+        example: John Updated
+        type: string
+      role_id:
+        example: 2
+        type: integer
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@kumquat.io
+    name: API Support
+  description: Kumquat 多集群应用管理平台 - 用户认证与权限管理 API
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: Kumquat Portal API
+  version: 1.0.0
+paths:
+  /auth/change-password:
+    put:
+      consumes:
+      - application/json
+      description: 修改当前登录用户的密码
+      parameters:
+      - description: 修改密码请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"message\":\"password changed successfully\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: '{\"code\":400,\"message\":\"...\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: '{\"code\":403,\"message\":\"旧密码错误\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 修改当前用户密码
+      tags:
+      - auth
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: 使用用户名和密码获取 JWT Token
+      parameters:
+      - description: 登录请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":{\"token\":\"...\",\"user\":{...}}}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: '{\"code\":400,\"message\":\"...\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"...\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 用户登录
+      tags:
+      - auth
+  /auth/me:
+    get:
+      consumes:
+      - application/json
+      description: 获取当前 JWT Token 对应的用户信息
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":{user}}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 获取当前登录用户信息
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: 注册新用户账号，默认角色为 guest
+      parameters:
+      - description: 注册请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":{user}}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: '{\"code\":400,\"message\":\"...\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: '{\"code\":409,\"message\":\"用户名或邮箱已存在\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 用户注册
+      tags:
+      - auth
+  /modules:
+    get:
+      consumes:
+      - application/json
+      description: 获取所有模块的树形结构列表，需要 module:read 权限
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":[{module_tree}]}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 获取模块列表（树形结构）
+      tags:
+      - modules
+    post:
+      consumes:
+      - application/json
+      description: 创建新模块，仅 admin 角色可操作。支持最多 5 级层级。
+      parameters:
+      - description: 创建模块请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateModuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":{module}}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: '{\"code\":400,\"message\":\"请求参数错误或层级超限\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: '{\"code\":403,\"message\":\"无权限\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 创建新模块
+      tags:
+      - modules
+  /modules/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除指定模块及其所有子模块，仅 admin 角色可操作
+      parameters:
+      - description: 模块ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"message\":\"deleted\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: '{\"code\":400,\"message\":\"无效的模块ID\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: '{\"code\":403,\"message\":\"无权限\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: '{\"code\":404,\"message\":\"模块不存在\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 删除模块
+      tags:
+      - modules
+    get:
+      consumes:
+      - application/json
+      description: 获取指定 ID 的模块详情
+      parameters:
+      - description: 模块ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":{module}}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: '{\"code\":400,\"message\":\"无效的模块ID\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: '{\"code\":404,\"message\":\"模块不存在\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 根据 ID 获取模块信息
+      tags:
+      - modules
+    put:
+      consumes:
+      - application/json
+      description: 更新指定模块的信息，仅 admin 角色可操作
+      parameters:
+      - description: 模块ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新模块请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateModuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":{module}}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: '{\"code\":400,\"message\":\"无效的模块ID\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: '{\"code\":403,\"message\":\"无权限\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: '{\"code\":404,\"message\":\"模块不存在\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 更新模块信息
+      tags:
+      - modules
+  /projects:
+    get:
+      consumes:
+      - application/json
+      description: 获取所有项目的分页列表，需要 project:read 权限
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":[{project}],\"pagination\":{...}}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 获取项目列表（分页）
+      tags:
+      - projects
+    post:
+      consumes:
+      - application/json
+      description: 创建新项目，仅 admin 角色可操作
+      parameters:
+      - description: 创建项目请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateProjectRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":{project}}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: '{\"code\":400,\"message\":\"请求参数错误\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: '{\"code\":403,\"message\":\"无权限\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 创建新项目
+      tags:
+      - projects
+  /projects/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除指定项目，仅 admin 角色可操作
+      parameters:
+      - description: 项目ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"message\":\"deleted\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: '{\"code\":400,\"message\":\"无效的项目ID\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: '{\"code\":403,\"message\":\"无权限\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: '{\"code\":404,\"message\":\"项目不存在\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 删除项目
+      tags:
+      - projects
+    get:
+      consumes:
+      - application/json
+      description: 获取指定 ID 的项目详情
+      parameters:
+      - description: 项目ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":{project}}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: '{\"code\":400,\"message\":\"无效的项目ID\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: '{\"code\":404,\"message\":\"项目不存在\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 根据 ID 获取项目信息
+      tags:
+      - projects
+    put:
+      consumes:
+      - application/json
+      description: 更新指定项目的信息，仅 admin 角色可操作
+      parameters:
+      - description: 项目ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新项目请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateProjectRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":{project}}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: '{\"code\":400,\"message\":\"无效的项目ID\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: '{\"code\":403,\"message\":\"无权限\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: '{\"code\":404,\"message\":\"项目不存在\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 更新项目信息
+      tags:
+      - projects
+  /roles:
+    get:
+      consumes:
+      - application/json
+      description: 获取所有角色列表，需要 role:read 权限
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":[{role}]}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 获取角色列表
+      tags:
+      - roles
+  /roles/{id}:
+    get:
+      consumes:
+      - application/json
+      description: 获取指定 ID 的角色详情
+      parameters:
+      - description: 角色ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":{role}}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: '{\"code\":400,\"message\":\"无效的角色ID\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: '{\"code\":404,\"message\":\"角色不存在\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 根据 ID 获取角色信息
+      tags:
+      - roles
+  /users:
+    get:
+      consumes:
+      - application/json
+      description: 获取所有用户的分页列表，需要 admin 角色或 user:read 权限
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":{users},\"pagination\":{...}}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: '{\"code\":403,\"message\":\"无权限\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 获取用户列表（分页）
+      tags:
+      - users
+    post:
+      consumes:
+      - application/json
+      description: 创建新用户账号，仅 admin 角色可操作
+      parameters:
+      - description: 创建用户请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":{user}}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: '{\"code\":400,\"message\":\"请求参数错误\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: '{\"code\":403,\"message\":\"无权限\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: '{\"code\":409,\"message\":\"用户名或邮箱已存在\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 创建新用户
+      tags:
+      - users
+  /users/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除指定用户，仅 admin 角色可操作。不能删除最后一个 admin 用户。
+      parameters:
+      - description: 用户ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"message\":\"deleted\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: '{\"code\":403,\"message\":\"不能删除最后一个 admin 用户\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: '{\"code\":404,\"message\":\"用户不存在\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 删除用户
+      tags:
+      - users
+    get:
+      consumes:
+      - application/json
+      description: 获取指定 ID 的用户详情
+      parameters:
+      - description: 用户ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":{user}}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: '{\"code\":400,\"message\":\"无效的用户ID\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: '{\"code\":404,\"message\":\"用户不存在\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 根据 ID 获取用户信息
+      tags:
+      - users
+    put:
+      consumes:
+      - application/json
+      description: 更新指定用户的信息，仅 admin 角色可操作
+      parameters:
+      - description: 用户ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新用户请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"code\":0,\"data\":{user}}'
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: '{\"code\":400,\"message\":\"请求参数错误\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: '{\"code\":401,\"message\":\"未授权\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: '{\"code\":403,\"message\":\"无权限\"}'
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: '{\"code\":404,\"message\":\"用户不存在\"}'
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 更新用户信息
+      tags:
+      - users
+securityDefinitions:
+  Bearer:
+    description: Type "Bearer" followed by a space and JWT token.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

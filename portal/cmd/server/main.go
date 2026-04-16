@@ -1,5 +1,24 @@
 package main
 
+// @title Kumquat Portal API
+// @version 1.0.0
+// @description Kumquat 多集群应用管理平台 - 用户认证与权限管理 API
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.email support@kumquat.io
+
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host localhost:8080
+// @BasePath /api/v1
+
+// @securityDefinitions.apikey Bearer
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and JWT token.
+
 import (
 	"os"
 	"os/signal"
@@ -20,6 +39,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
+
+	_ "github.com/fize/kumquat/portal/docs"
+	swagger "github.com/swaggo/gin-swagger"
+	"github.com/swaggo/files"
 )
 
 func main() {
@@ -157,6 +180,9 @@ func initDB(cfg *PortalConfig, logger *log.Logger) (*gorm.DB, error) {
 }
 
 func registerRoutes(engine *gin.Engine, db *gorm.DB, authService *service.AuthService, userService *service.UserService, moduleService *service.ModuleService, projectService *service.ProjectService, roleService *service.RoleService, authMiddleware *middleware.AuthMiddleware) {
+	// Swagger UI
+	engine.GET("/swagger/*any", swagger.WrapHandler(swaggerFiles.Handler))
+
 	api := engine.Group("/api/v1")
 
 	authHandler := handler.NewAuthController(authService, authMiddleware)

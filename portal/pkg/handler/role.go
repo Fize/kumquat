@@ -34,6 +34,16 @@ func (c *RoleController) Middlewares() []ginserver.MiddlewaresObject {
 	}
 }
 
+// List 获取角色列表
+// @Summary 获取角色列表
+// @Description 获取所有角色列表，需要 role:read 权限
+// @Tags roles
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":[{role}]}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
+// @Router /roles [get]
 func (c *RoleController) List() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
 		roles, err := c.svc.List(ctx.Request.Context())
@@ -50,6 +60,19 @@ func (c *RoleController) List() (gin.HandlerFunc, error) {
 	}, nil
 }
 
+// Get 获取单个角色
+// @Summary 根据 ID 获取角色信息
+// @Description 获取指定 ID 的角色详情
+// @Tags roles
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param id path int true "角色ID"
+// @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":{role}}"
+// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"无效的角色ID\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
+// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"角色不存在\"}"
+// @Router /roles/{id} [get]
 func (c *RoleController) Get() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
 		id, err := strconv.ParseUint(ctx.Param("id"), 10, 32)
