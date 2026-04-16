@@ -6,7 +6,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Base 基础模型，包含通用字段
+// Base base model with common fields
 type Base struct {
 	ID        uint           `json:"id" gorm:"primarykey"`
 	CreatedAt time.Time      `json:"created_at"`

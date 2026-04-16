@@ -19,7 +19,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// setupProjectTestDB 创建测试数据库和依赖
+// setupProjectTestDB creates test database and dependencies
 func setupProjectTestDB(t *testing.T) (*gin.Engine, *service.ProjectService, *service.RoleService, *middleware.AuthMiddleware, *gorm.DB, *service.JWTService) {
 	gin.SetMode(gin.TestMode)
 
@@ -29,7 +29,7 @@ func setupProjectTestDB(t *testing.T) (*gin.Engine, *service.ProjectService, *se
 	err = db.AutoMigrate(&model.User{}, &model.Role{}, &model.Permission{}, &model.Module{}, &model.Project{})
 	require.NoError(t, err)
 
-	// 创建角色
+	// Create role
 	adminRole := &model.Role{Name: model.RoleAdmin}
 	err = db.Create(adminRole).Error
 	require.NoError(t, err)
@@ -73,9 +73,9 @@ func TestProjectController_List_Success(t *testing.T) {
 	assert.Equal(t, float64(0), resp["code"])
 }
 
-// TestProjectController_Create_Success 跳过此测试
-// 原因：SQLite 与 model.JSONConfig 类型存在兼容性问题
-// 生产环境使用 MySQL，此问题仅在测试环境出现
+// TestProjectController_Create_Success skip this test
+// Reason: SQLite compatibility issue with model.JSONConfig type
+// Production uses MySQL, this issue only occurs in test environment
 func TestProjectController_Create_Success(t *testing.T) {
 	t.Skip("Skipped: SQLite compatibility issue with JSONConfig type")
 }
@@ -96,7 +96,7 @@ func TestProjectController_Create_ValidationError(t *testing.T) {
 
 	router.POST("/api/v1/projects", authMiddleware.Auth(), middleware.RequireRole("admin"), handler)
 
-	// 缺少必填字段
+	// Missing required field
 	body := map[string]interface{}{"name": "test-project"}
 	jsonBody, _ := json.Marshal(body)
 
@@ -133,8 +133,8 @@ func TestProjectController_Get_NotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-// TestProjectController_Delete_Success 跳过此测试
-// 原因：依赖 Project Create，存在 SQLite 兼容性问题
+// TestProjectController_Delete_Success skip this test
+// Reason: Depends on Project Create with SQLite compatibility issue
 func TestProjectController_Delete_Success(t *testing.T) {
 	t.Skip("Skipped: depends on Project Create with SQLite compatibility issue")
 }

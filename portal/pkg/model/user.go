@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// User 用户模型
+// User user model
 type User struct {
 	Base
 	Username string  `json:"username" gorm:"uniqueIndex;not null;size:64"`
@@ -20,22 +20,22 @@ type User struct {
 	Module   *Module `json:"module,omitempty" gorm:"foreignKey:ModuleID"`
 }
 
-// TableName 指定表名
+// TableName specifies table name
 func (User) TableName() string {
 	return "users"
 }
 
-// BeforeCreate 创建前自动加密密码
+// BeforeCreate automatically encrypts password before creation
 func (u *User) BeforeCreate(tx *gorm.DB) error {
 	return u.hashPasswordIfNeeded()
 }
 
-// BeforeUpdate 更新前自动加密密码（如果密码被修改）
+// BeforeUpdate automatically encrypts password before update (if password is modified)
 func (u *User) BeforeUpdate(tx *gorm.DB) error {
 	return u.hashPasswordIfNeeded()
 }
 
-// hashPasswordIfNeeded 如果密码非空且不是 bcrypt 哈希格式，则加密
+// hashPasswordIfNeeded encrypts password if it's not empty and not in bcrypt hash format
 func (u *User) hashPasswordIfNeeded() error {
 	if u.Password != "" && !strings.HasPrefix(u.Password, "$2a$") {
 		hashed, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
@@ -47,17 +47,17 @@ func (u *User) hashPasswordIfNeeded() error {
 	return nil
 }
 
-// CheckPassword 验证密码
+// CheckPassword verifies password
 func (u *User) CheckPassword(password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password)) == nil
 }
 
-// SetPassword 设置明文密码（将在 BeforeCreate 中加密）
+// SetPassword sets plaintext password (will be encrypted in BeforeCreate)
 func (u *User) SetPassword(password string) {
 	u.Password = password
 }
 
-// ToResponse 转换为响应结构（不含敏感信息）
+// ToResponse converts to response structure (without sensitive information)
 func (u *User) ToResponse() map[string]interface{} {
 	resp := map[string]interface{}{
 		"id":         u.ID,

@@ -20,22 +20,22 @@ func NewApplicationService(k8sClient client.Client) *ApplicationService {
 	return &ApplicationService{k8sClient: k8sClient}
 }
 
-// ListApplicationsRequest 应用列表查询参数
+// ListApplicationsRequest application list query parameters
 type ListApplicationsRequest struct {
 	Namespace       string
 	SchedulingPhase string // Pending, Scheduling, Scheduled, Descheduling, Failed
 	HealthPhase     string // Healthy, Progressing, Degraded, Unknown
-	Limit           int64  // 分页大小，0 表示不限制
-	Continue        string // 分页游标
+	Limit           int64  // page size, 0 means no limit
+	Continue        string // pagination cursor
 }
 
-// ListApplicationsResponse 应用列表响应
+// ListApplicationsResponse application list response
 type ListApplicationsResponse struct {
 	Items    []appsv1alpha1.Application `json:"items"`
-	Continue string                     `json:"continue,omitempty"` // 下一页游标
+	Continue string                     `json:"continue,omitempty"` // next page cursor
 }
 
-// List 列出应用
+// List lists applications
 func (s *ApplicationService) List(ctx context.Context, req *ListApplicationsRequest) (*ListApplicationsResponse, error) {
 	appList := &appsv1alpha1.ApplicationList{}
 	opts := []client.ListOption{}
@@ -53,7 +53,7 @@ func (s *ApplicationService) List(ctx context.Context, req *ListApplicationsRequ
 		return nil, wrapK8sError(err, "failed to list applications")
 	}
 
-	// 过滤
+	// Filter
 	var filtered []appsv1alpha1.Application
 	for _, app := range appList.Items {
 		if req.SchedulingPhase != "" && string(app.Status.SchedulingPhase) != req.SchedulingPhase {
@@ -71,7 +71,7 @@ func (s *ApplicationService) List(ctx context.Context, req *ListApplicationsRequ
 	}, nil
 }
 
-// Get 获取应用详情
+// Get gets application details
 func (s *ApplicationService) Get(ctx context.Context, name, namespace string) (*appsv1alpha1.Application, error) {
 	app := &appsv1alpha1.Application{}
 	key := client.ObjectKey{Name: name, Namespace: namespace}
@@ -81,12 +81,12 @@ func (s *ApplicationService) Get(ctx context.Context, name, namespace string) (*
 	return app, nil
 }
 
-// CreateApplicationRequest 创建应用请求
+// CreateApplicationRequest create application request
 type CreateApplicationRequest struct {
 	Application *appsv1alpha1.Application
 }
 
-// Create 创建应用
+// Create creates an application
 func (s *ApplicationService) Create(ctx context.Context, req *CreateApplicationRequest) error {
 	if err := s.k8sClient.Create(ctx, req.Application); err != nil {
 		return wrapK8sError(err, "failed to create application")
@@ -94,12 +94,12 @@ func (s *ApplicationService) Create(ctx context.Context, req *CreateApplicationR
 	return nil
 }
 
-// UpdateApplicationRequest 更新应用请求
+// UpdateApplicationRequest update application request
 type UpdateApplicationRequest struct {
 	Application *appsv1alpha1.Application
 }
 
-// Update 更新应用
+// Update updates an application
 func (s *ApplicationService) Update(ctx context.Context, req *UpdateApplicationRequest) error {
 	if err := s.k8sClient.Update(ctx, req.Application); err != nil {
 		return wrapK8sError(err, "failed to update application")
@@ -107,7 +107,7 @@ func (s *ApplicationService) Update(ctx context.Context, req *UpdateApplicationR
 	return nil
 }
 
-// Delete 删除应用
+// Delete deletes an application
 func (s *ApplicationService) Delete(ctx context.Context, name, namespace string) error {
 	app := &appsv1alpha1.Application{}
 	app.Name = name
@@ -118,14 +118,14 @@ func (s *ApplicationService) Delete(ctx context.Context, name, namespace string)
 	return nil
 }
 
-// SuspendApplicationRequest 暂停/恢复应用请求
+// SuspendApplicationRequest suspend/resume application request
 type SuspendApplicationRequest struct {
 	Name      string
 	Namespace string
 	Suspend   bool
 }
 
-// Suspend 暂停或恢复应用
+// Suspend suspends or resumes an application
 func (s *ApplicationService) Suspend(ctx context.Context, req *SuspendApplicationRequest) error {
 	patchData, _ := json.Marshal(map[string]interface{}{
 		"spec": map[string]interface{}{
@@ -144,14 +144,14 @@ func (s *ApplicationService) Suspend(ctx context.Context, req *SuspendApplicatio
 	return nil
 }
 
-// ScaleApplicationRequest 扩缩容应用请求
+// ScaleApplicationRequest scale application request
 type ScaleApplicationRequest struct {
 	Name      string
 	Namespace string
 	Replicas  int32
 }
 
-// Scale 扩缩容应用
+// Scale scales an application
 func (s *ApplicationService) Scale(ctx context.Context, req *ScaleApplicationRequest) error {
 	patchData, _ := json.Marshal(map[string]interface{}{
 		"spec": map[string]interface{}{
@@ -170,14 +170,14 @@ func (s *ApplicationService) Scale(ctx context.Context, req *ScaleApplicationReq
 	return nil
 }
 
-// PatchApplicationRequest 部分更新应用请求
+// PatchApplicationRequest patch application request
 type PatchApplicationRequest struct {
 	Name      string
 	Namespace string
 	Patch     client.Patch
 }
 
-// Patch 部分更新应用
+// Patch patches an application
 func (s *ApplicationService) Patch(ctx context.Context, req *PatchApplicationRequest) error {
 	app := &appsv1alpha1.Application{}
 	app.Name = req.Name

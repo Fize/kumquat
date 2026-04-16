@@ -1,7 +1,5 @@
 # Kumctl
 
-[中文](README_zh.md)
+Kumquat command-line tool, providing cluster management, kubeconfig management and other operational tasks.
 
-Command-line tool for Kumquat, providing cluster management, kubeconfig management and other operations.
-
-> This is a sub-project of Kumquat, to be built.
+> This project is a subproject of Kumquat, to be initialized later.

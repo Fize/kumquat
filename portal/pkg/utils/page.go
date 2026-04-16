@@ -5,7 +5,7 @@ import (
 	"strconv"
 )
 
-// GetPageSize 解析分页参数
+// GetPageSize parses pagination parameters
 func GetPageSize(c *gin.Context) (page, size int) {
 	page, _ = strconv.Atoi(c.DefaultQuery("page", "1"))
 	size, _ = strconv.Atoi(c.DefaultQuery("size", "20"))

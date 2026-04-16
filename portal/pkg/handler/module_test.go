@@ -19,7 +19,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// setupModuleTestDB 创建测试数据库和依赖
+// setupModuleTestDB creates test database and dependencies
 func setupModuleTestDB(t *testing.T) (*gin.Engine, *service.ModuleService, *service.RoleService, *middleware.AuthMiddleware, *gorm.DB, *service.JWTService) {
 	gin.SetMode(gin.TestMode)
 
@@ -29,7 +29,7 @@ func setupModuleTestDB(t *testing.T) (*gin.Engine, *service.ModuleService, *serv
 	err = db.AutoMigrate(&model.User{}, &model.Role{}, &model.Permission{}, &model.Module{}, &model.Project{})
 	require.NoError(t, err)
 
-	// 创建角色
+	// Create role
 	adminRole := &model.Role{Name: model.RoleAdmin}
 	err = db.Create(adminRole).Error
 	require.NoError(t, err)
@@ -124,7 +124,7 @@ func TestModuleController_Create_ValidationError(t *testing.T) {
 
 	router.POST("/api/v1/modules", authMiddleware.Auth(), middleware.RequireRole("admin"), handler)
 
-	// 缺少 name
+	// Missing name
 	body := map[string]interface{}{"sort": 1}
 	jsonBody, _ := json.Marshal(body)
 
@@ -145,7 +145,7 @@ func TestModuleController_Delete_Success(t *testing.T) {
 	err := db.Create(admin).Error
 	require.NoError(t, err)
 
-	// 创建模块
+	// Create module
 	module := &model.Module{Name: "test-module", Sort: 1}
 	err = db.Create(module).Error
 	require.NoError(t, err)

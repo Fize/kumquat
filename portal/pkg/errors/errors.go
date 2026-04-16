@@ -5,14 +5,14 @@ import (
 	"fmt"
 )
 
-// AppError 应用错误
+// AppError application error
 type AppError struct {
 	Code    int
 	Message string
 	Err     error
 }
 
-// New 创建应用错误
+// New creates application error
 func New(code int, message string) *AppError {
 	if message == "" {
 		message = GetMessage(code)
@@ -20,12 +20,12 @@ func New(code int, message string) *AppError {
 	return &AppError{Code: code, Message: message}
 }
 
-// Newf 创建应用错误（格式化消息）
+// Newf creates application error (formatted message)
 func Newf(code int, format string, args ...interface{}) *AppError {
 	return &AppError{Code: code, Message: fmt.Sprintf(format, args...)}
 }
 
-// Wrap 包装错误
+// Wrap wraps error
 func Wrap(code int, message string, err error) *AppError {
 	if message == "" {
 		message = GetMessage(code)
@@ -33,12 +33,12 @@ func Wrap(code int, message string, err error) *AppError {
 	return &AppError{Code: code, Message: message, Err: err}
 }
 
-// WrapCode 用错误码包装错误
+// WrapCode wraps error with error code
 func WrapCode(code int, err error) *AppError {
 	return &AppError{Code: code, Message: GetMessage(code), Err: err}
 }
 
-// Error 实现 error 接口
+// Error implements error interface
 func (e *AppError) Error() string {
 	if e.Err != nil {
 		return fmt.Sprintf("%s: %v", e.Message, e.Err)
@@ -46,12 +46,12 @@ func (e *AppError) Error() string {
 	return e.Message
 }
 
-// Unwrap 实现错误解包
+// Unwrap implements error unwrapping
 func (e *AppError) Unwrap() error {
 	return e.Err
 }
 
-// Is 实现 errors.Is 比较
+// Is implements errors.Is comparison
 func (e *AppError) Is(target error) bool {
 	t, ok := target.(*AppError)
 	if !ok {
@@ -60,7 +60,7 @@ func (e *AppError) Is(target error) bool {
 	return e.Code == t.Code
 }
 
-// AsAppError 尝试转换为 AppError
+// AsAppError attempts to convert to AppError
 func AsAppError(err error) (*AppError, bool) {
 	var appErr *AppError
 	if errors.As(err, &appErr) {
@@ -69,7 +69,7 @@ func AsAppError(err error) (*AppError, bool) {
 	return nil, false
 }
 
-// IsCode 检查错误是否为指定错误码
+// IsCode checks if error is specified error code
 func IsCode(err error, code int) bool {
 	appErr, ok := AsAppError(err)
 	if !ok {
@@ -78,11 +78,11 @@ func IsCode(err error, code int) bool {
 	return appErr.Code == code
 }
 
-// HTTPStatus 获取 HTTP 状态码
+// HTTPStatus gets HTTP status code
 func (e *AppError) HTTPStatus() int {
 	switch {
 	case e.Code >= 1000:
-		// 业务错误码映射到 400
+		// Business error codes map to 400
 		return 400
 	case e.Code >= 500:
 		return e.Code
@@ -93,34 +93,34 @@ func (e *AppError) HTTPStatus() int {
 	}
 }
 
-// 便捷构造函数
+// Convenience constructors
 
-// NotFoundError 创建 404 错误
+// NotFoundError creates 404 error
 func NotFoundError(message string) *AppError {
 	return New(CodeNotFound, message)
 }
 
-// BadRequestError 创建 400 错误
+// BadRequestError creates 400 error
 func BadRequestError(message string) *AppError {
 	return New(CodeBadRequest, message)
 }
 
-// UnauthorizedError 创建 401 错误
+// UnauthorizedError creates 401 error
 func UnauthorizedError(message string) *AppError {
 	return New(CodeUnauthorized, message)
 }
 
-// ForbiddenError 创建 403 错误
+// ForbiddenError creates 403 error
 func ForbiddenError(message string) *AppError {
 	return New(CodeForbidden, message)
 }
 
-// ConflictError 创建 409 错误
+// ConflictError creates 409 error
 func ConflictError(message string) *AppError {
 	return New(CodeConflict, message)
 }
 
-// InternalError 创建 500 错误
+// InternalError creates 500 error
 func InternalError(message string) *AppError {
 	return New(CodeInternal, message)
 }

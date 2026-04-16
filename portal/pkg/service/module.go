@@ -12,18 +12,19 @@ import (
 	"gorm.io/gorm"
 )
 
-// ModuleService 模块服务
+// ModuleService module service
+
 type ModuleService struct {
 	repo repository.ModuleRepository
-	db   *gorm.DB // 保留用于递归删除事务
+	db   *gorm.DB // reserved for recursive deletion transaction
 }
 
-// NewModuleService 创建模块服务
+// NewModuleService creates a module service
 func NewModuleService(repo repository.ModuleRepository, db *gorm.DB) *ModuleService {
 	return &ModuleService{repo: repo, db: db}
 }
 
-// List 获取模块列表（树形）
+// List gets module list (tree structure)
 func (s *ModuleService) List(ctx context.Context) ([]model.Module, error) {
 	modules, err := s.repo.List(ctx)
 	if err != nil {
@@ -33,7 +34,7 @@ func (s *ModuleService) List(ctx context.Context) ([]model.Module, error) {
 	return s.buildTree(modules), nil
 }
 
-// buildTree 构建树形结构
+// buildTree builds tree structure
 func (s *ModuleService) buildTree(modules []model.Module) []model.Module {
 	moduleMap := make(map[uint][]model.Module)
 	var roots []model.Module
@@ -64,7 +65,7 @@ func (s *ModuleService) buildTree(modules []model.Module) []model.Module {
 	return roots
 }
 
-// GetByID 根据ID获取模块
+// GetByID gets module by ID
 func (s *ModuleService) GetByID(ctx context.Context, id uint) (*model.Module, error) {
 	module, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -76,7 +77,7 @@ func (s *ModuleService) GetByID(ctx context.Context, id uint) (*model.Module, er
 	return module, nil
 }
 
-// Create 创建模块
+// Create creates a module
 func (s *ModuleService) Create(ctx context.Context, name string, parentID *uint, sort int) (*model.Module, error) {
 	if parentID != nil {
 		parent, err := s.repo.GetByID(ctx, *parentID)
@@ -105,7 +106,7 @@ func (s *ModuleService) Create(ctx context.Context, name string, parentID *uint,
 	return s.repo.GetByID(ctx, module.ID)
 }
 
-// Update 更新模块
+// Update updates a module
 func (s *ModuleService) Update(ctx context.Context, id uint, name string, sort int) (*model.Module, error) {
 	module, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -128,16 +129,16 @@ func (s *ModuleService) Update(ctx context.Context, id uint, name string, sort i
 	return s.repo.GetByID(ctx, id)
 }
 
-// Delete 删除模块（递归删除子模块，使用事务）
+// Delete deletes a module (recursively deletes child modules, using transaction)
 func (s *ModuleService) Delete(ctx context.Context, id uint) error {
-	// 先检查模块是否存在
+	// First check if module exists
 	_, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		log.WarnContext(ctx, "delete module failed: not found", "module_id", id)
 		return apperr.New(apperr.CodeModuleNotFound, "")
 	}
 
-	// 在事务中递归删除
+	// Recursively delete in transaction
 	return repository.WithTransaction(s.db, ctx, func(tx *gorm.DB) error {
 		if err := s.deleteChildrenTx(tx, id); err != nil {
 			log.ErrorContext(ctx, "delete module failed: delete children error", "err", err, "module_id", id)
@@ -151,7 +152,7 @@ func (s *ModuleService) Delete(ctx context.Context, id uint) error {
 	})
 }
 
-// deleteChildrenTx 在事务中递归删除子模块
+// deleteChildrenTx recursively deletes child modules in transaction
 func (s *ModuleService) deleteChildrenTx(tx *gorm.DB, parentID uint) error {
 	var children []model.Module
 	if err := tx.Where("parent_id = ?", parentID).Find(&children).Error; err != nil {

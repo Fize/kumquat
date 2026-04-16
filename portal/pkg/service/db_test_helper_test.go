@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// setupTestDB 创建内存 SQLite 数据库并自动迁移
+// setupTestDB creates an in-memory SQLite database with auto-migration
 func setupTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -22,11 +22,11 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// setupTestDBWithRoles 创建带预定义角色的测试数据库
+// setupTestDBWithRoles creates a test database with predefined roles
 func setupTestDBWithRoles(t *testing.T) *gorm.DB {
 	db := setupTestDB(t)
 
-	// 创建预定义角色
+	// Create predefined roles
 	roles := []model.Role{
 		{Name: model.RoleAdmin},
 		{Name: model.RoleMember},
@@ -39,21 +39,21 @@ func setupTestDBWithRoles(t *testing.T) *gorm.DB {
 	return db
 }
 
-// setupTestJWTService 创建测试用 JWT service
+// setupTestJWTService creates a JWT service for testing
 func setupTestJWTService() *JWTService {
 	return NewJWTService("test-secret", time.Hour, 10*time.Minute)
 }
 
-// assertAppErrCode 断言错误码
+// assertAppErrCode asserts error code
 func assertAppErrCode(t *testing.T, err error, expectedCode int) {
 	t.Helper()
 	assert.True(t, apperr.IsCode(err, expectedCode), "expected error code %d, got: %v", expectedCode, err)
 }
 
-// createTestModule 在 DB 中创建测试模块
+// createTestModule creates a test module in the database
 func createTestModule(t *testing.T, db *gorm.DB, name string, parentID *uint, sort int) *model.Module {
 	m := &model.Module{Name: name, ParentID: parentID, Sort: sort}
-	// 手动设置 Level 和 Path，因为 BeforeCreate 可能无法在 SQLite 中正确查找 parent
+	// Manually set Level and Path, as BeforeCreate may not properly find parent in SQLite
 	if parentID != nil {
 		var parent model.Module
 		require.NoError(t, db.First(&parent, *parentID).Error)
@@ -68,7 +68,7 @@ func createTestModule(t *testing.T, db *gorm.DB, name string, parentID *uint, so
 	return m
 }
 
-// createTestUser 在 DB 中创建测试用户
+// createTestUser creates a test user in the database
 func createTestUser(t *testing.T, db *gorm.DB, username, email, password string, roleID uint) *model.User {
 	u := &model.User{
 		Username: username,
@@ -80,27 +80,27 @@ func createTestUser(t *testing.T, db *gorm.DB, username, email, password string,
 	return u
 }
 
-// newModuleServiceFromDB 从 DB 创建 ModuleService
+// newModuleServiceFromDB creates a ModuleService from the database
 func newModuleServiceFromDB(db *gorm.DB) *ModuleService {
 	return NewModuleService(repository.NewModuleRepository(db), db)
 }
 
-// newProjectServiceFromDB 从 DB 创建 ProjectService
+// newProjectServiceFromDB creates a ProjectService from the database
 func newProjectServiceFromDB(db *gorm.DB) *ProjectService {
 	return NewProjectService(repository.NewProjectRepository(db), db)
 }
 
-// newRoleServiceFromDB 从 DB 创建 RoleService
+// newRoleServiceFromDB creates a RoleService from the database
 func newRoleServiceFromDB(db *gorm.DB) *RoleService {
 	return NewRoleService(repository.NewRoleRepository(db), db)
 }
 
-// newUserServiceFromDB 从 DB 创建 UserService
+// newUserServiceFromDB creates a UserService from the database
 func newUserServiceFromDB(db *gorm.DB) *UserService {
 	return NewUserService(repository.NewUserRepository(db), repository.NewRoleRepository(db), db)
 }
 
-// newAuthServiceFromDB 从 DB 创建 AuthService
+// newAuthServiceFromDB creates an AuthService from the database
 func newAuthServiceFromDB(db *gorm.DB) *AuthService {
 	return NewAuthService(repository.NewUserRepository(db), repository.NewRoleRepository(db), setupTestJWTService(), db)
 }

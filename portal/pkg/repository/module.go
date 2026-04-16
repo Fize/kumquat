@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// ModuleRepository 模块 Repository 接口
+// ModuleRepository module repository interface
 type ModuleRepository interface {
 	GetByID(ctx context.Context, id uint) (*model.Module, error)
 	List(ctx context.Context) ([]model.Module, error)
@@ -17,13 +17,13 @@ type ModuleRepository interface {
 	GetChildren(ctx context.Context, parentID uint) ([]model.Module, error)
 }
 
-// moduleRepository 模块 Repository 实现
+// moduleRepository module repository implementation
 type moduleRepository struct {
 	*BaseRepository[model.Module]
 	db *gorm.DB
 }
 
-// NewModuleRepository 创建模块 Repository
+// NewModuleRepository creates module repository
 func NewModuleRepository(db *gorm.DB) ModuleRepository {
 	return &moduleRepository{
 		BaseRepository: NewBaseRepository[model.Module](db),
@@ -31,7 +31,7 @@ func NewModuleRepository(db *gorm.DB) ModuleRepository {
 	}
 }
 
-// List 获取所有模块
+// List gets all modules
 func (r *moduleRepository) List(ctx context.Context) ([]model.Module, error) {
 	var modules []model.Module
 	if err := r.db.WithContext(ctx).Find(&modules).Error; err != nil {
@@ -40,7 +40,7 @@ func (r *moduleRepository) List(ctx context.Context) ([]model.Module, error) {
 	return modules, nil
 }
 
-// GetChildren 获取子模块
+// GetChildren gets child modules
 func (r *moduleRepository) GetChildren(ctx context.Context, parentID uint) ([]model.Module, error) {
 	var children []model.Module
 	if err := r.db.WithContext(ctx).Where("parent_id = ?", parentID).Find(&children).Error; err != nil {

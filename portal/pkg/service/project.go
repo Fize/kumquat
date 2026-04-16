@@ -11,18 +11,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// ProjectService 项目服务
+// ProjectService project service
 type ProjectService struct {
 	repo repository.ProjectRepository
 	db   *gorm.DB
 }
 
-// NewProjectService 创建项目服务
+// NewProjectService creates project service
 func NewProjectService(repo repository.ProjectRepository, db *gorm.DB) *ProjectService {
 	return &ProjectService{repo: repo, db: db}
 }
 
-// List 获取项目列表
+// List gets project list
 func (s *ProjectService) List(ctx context.Context, page, size int) ([]model.Project, int64, error) {
 	projects, total, err := s.repo.List(ctx, page, size)
 	if err != nil {
@@ -32,7 +32,7 @@ func (s *ProjectService) List(ctx context.Context, page, size int) ([]model.Proj
 	return projects, total, nil
 }
 
-// GetByID 根据ID获取项目
+// GetByID gets project by ID
 func (s *ProjectService) GetByID(ctx context.Context, id uint) (*model.Project, error) {
 	project, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -44,7 +44,7 @@ func (s *ProjectService) GetByID(ctx context.Context, id uint) (*model.Project, 
 	return project, nil
 }
 
-// Create 创建项目
+// Create creates a project
 func (s *ProjectService) Create(ctx context.Context, name string, moduleID uint, config model.JSONConfig) (*model.Project, error) {
 	exists, err := s.repo.ExistsModule(ctx, moduleID)
 	if err != nil {
@@ -70,7 +70,7 @@ func (s *ProjectService) Create(ctx context.Context, name string, moduleID uint,
 	return s.repo.GetByID(ctx, project.ID)
 }
 
-// Update 更新项目
+// Update updates a project
 func (s *ProjectService) Update(ctx context.Context, id uint, name string, config model.JSONConfig) (*model.Project, error) {
 	project, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -95,7 +95,7 @@ func (s *ProjectService) Update(ctx context.Context, id uint, name string, confi
 	return s.repo.GetByID(ctx, id)
 }
 
-// Delete 删除项目
+// Delete deletes a project
 func (s *ProjectService) Delete(ctx context.Context, id uint) error {
 	project, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -112,7 +112,7 @@ func (s *ProjectService) Delete(ctx context.Context, id uint) error {
 	return nil
 }
 
-// ListByModule 根据模块获取项目
+// ListByModule gets projects by module
 func (s *ProjectService) ListByModule(ctx context.Context, moduleID uint, page, size int) ([]model.Project, int64, error) {
 	projects, total, err := s.repo.ListByModuleID(ctx, moduleID, page, size)
 	if err != nil {

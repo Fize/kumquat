@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CreateProjectRequest 创建项目请求
+// CreateProjectRequest represents create project request
 // swagger:model
 type CreateProjectRequest struct {
 	Name     string                 `json:"name" binding:"required" example:"my-project"`
@@ -20,21 +20,21 @@ type CreateProjectRequest struct {
 	Config   map[string]interface{} `json:"config" example:"{\"key\":\"value\"}"`
 }
 
-// UpdateProjectRequest 更新项目请求
+// UpdateProjectRequest represents update project request
 // swagger:model
 type UpdateProjectRequest struct {
 	Name   string                 `json:"name" example:"my-project-updated"`
 	Config map[string]interface{} `json:"config" example:"{\"key\":\"new-value\"}"`
 }
 
-// ProjectController 项目控制器，实现 RestController 接口
+// ProjectController implements RestController interface
 type ProjectController struct {
 	svc           *service.ProjectService
 	rs            *service.RoleService
 	authMiddleware *middleware.AuthMiddleware
 }
 
-// NewProjectController 创建项目控制器
+// NewProjectController creates a new project controller
 func NewProjectController(projectSvc *service.ProjectService, roleSvc *service.RoleService, authMiddleware *middleware.AuthMiddleware) *ProjectController {
 	return &ProjectController{svc: projectSvc, rs: roleSvc, authMiddleware: authMiddleware}
 }
@@ -55,17 +55,17 @@ func (c *ProjectController) Middlewares() []ginserver.MiddlewaresObject {
 	}
 }
 
-// List 获取项目列表
-// @Summary 获取项目列表（分页）
-// @Description 获取所有项目的分页列表，需要 project:read 权限
+// List retrieves project list
+// @Summary Get project list (paginated)
+// @Description Get paginated project list, requires project:read permission
 // @Tags projects
 // @Accept json
 // @Produce json
 // @Security Bearer
-// @Param page query int false "页码" default(1)
-// @Param size query int false "每页数量" default(10)
+// @Param page query int false "page number" default(1)
+// @Param size query int false "page size" default(10)
 // @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":[{project}],\"pagination\":{...}}"
-// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"unauthorized\"}"
 // @Router /projects [get]
 func (c *ProjectController) List() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
@@ -84,18 +84,18 @@ func (c *ProjectController) List() (gin.HandlerFunc, error) {
 	}, nil
 }
 
-// Get 获取单个项目
-// @Summary 根据 ID 获取项目信息
-// @Description 获取指定 ID 的项目详情
+// Get retrieves a single project
+// @Summary Get project information by ID
+// @Description Get project details by specified ID
 // @Tags projects
 // @Accept json
 // @Produce json
 // @Security Bearer
-// @Param id path int true "项目ID"
+// @Param id path int true "project ID"
 // @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":{project}}"
-// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"无效的项目ID\"}"
-// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
-// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"项目不存在\"}"
+// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"invalid project ID\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"unauthorized\"}"
+// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"project not found\"}"
 // @Router /projects/{id} [get]
 func (c *ProjectController) Get() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
@@ -114,18 +114,18 @@ func (c *ProjectController) Get() (gin.HandlerFunc, error) {
 	}, nil
 }
 
-// Create 创建项目
-// @Summary 创建新项目
-// @Description 创建新项目，仅 admin 角色可操作
+// Create creates a project
+// @Summary Create new project
+// @Description Create new project, only admin role can perform
 // @Tags projects
 // @Accept json
 // @Produce json
 // @Security Bearer
-// @Param request body CreateProjectRequest true "创建项目请求"
+// @Param request body CreateProjectRequest true "create project request"
 // @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":{project}}"
-// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"请求参数错误\"}"
-// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
-// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"无权限\"}"
+// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"invalid request parameters\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"unauthorized\"}"
+// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"no permission\"}"
 // @Router /projects [post]
 func (c *ProjectController) Create() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
@@ -139,7 +139,7 @@ func (c *ProjectController) Create() (gin.HandlerFunc, error) {
 			utils.BadRequest(ctx, err.Error())
 			return
 		}
-		// 转换为 model.JSONConfig 类型以确保正确的数据库序列化
+		// Convert to model.JSONConfig type to ensure correct database serialization
 		config := model.JSONConfig(req.Config)
 		project, err := c.svc.Create(ctx.Request.Context(), req.Name, req.ModuleID, config)
 		if err != nil {
@@ -152,20 +152,20 @@ func (c *ProjectController) Create() (gin.HandlerFunc, error) {
 	}, nil
 }
 
-// Update 更新项目
-// @Summary 更新项目信息
-// @Description 更新指定项目的信息，仅 admin 角色可操作
+// Update updates project
+// @Summary Update project information
+// @Description Update specified project information, only admin role can perform
 // @Tags projects
 // @Accept json
 // @Produce json
 // @Security Bearer
-// @Param id path int true "项目ID"
-// @Param request body UpdateProjectRequest true "更新项目请求"
+// @Param id path int true "project ID"
+// @Param request body UpdateProjectRequest true "update project request"
 // @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":{project}}"
-// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"无效的项目ID\"}"
-// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
-// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"无权限\"}"
-// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"项目不存在\"}"
+// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"invalid project ID\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"unauthorized\"}"
+// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"no permission\"}"
+// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"project not found\"}"
 // @Router /projects/{id} [put]
 func (c *ProjectController) Update() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
@@ -194,19 +194,19 @@ func (c *ProjectController) Update() (gin.HandlerFunc, error) {
 	}, nil
 }
 
-// Delete 删除项目
-// @Summary 删除项目
-// @Description 删除指定项目，仅 admin 角色可操作
+// Delete deletes project
+// @Summary Delete project
+// @Description Delete specified project, only admin role can perform
 // @Tags projects
 // @Accept json
 // @Produce json
 // @Security Bearer
-// @Param id path int true "项目ID"
+// @Param id path int true "project ID"
 // @Success 200 {object} map[string]interface{} "{\"code\":0,\"message\":\"deleted\"}"
-// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"无效的项目ID\"}"
-// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
-// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"无权限\"}"
-// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"项目不存在\"}"
+// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"invalid project ID\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"unauthorized\"}"
+// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"no permission\"}"
+// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"project not found\"}"
 // @Router /projects/{id} [delete]
 func (c *ProjectController) Delete() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {

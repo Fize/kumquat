@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 )
 
-// JSONConfig JSON 配置类型
+// JSONConfig JSON config type
 type JSONConfig map[string]interface{}
 
-// Value 实现 driver.Valuer
+// Value implements driver.Valuer
 func (j JSONConfig) Value() (interface{}, error) {
 	if j == nil {
 		return nil, nil
@@ -19,7 +19,7 @@ func (j JSONConfig) Value() (interface{}, error) {
 	return string(data), nil
 }
 
-// Scan 实现 sql.Scanner
+// Scan implements sql.Scanner
 func (j *JSONConfig) Scan(value interface{}) error {
 	if value == nil {
 		*j = nil
@@ -37,7 +37,7 @@ func (j *JSONConfig) Scan(value interface{}) error {
 	return json.Unmarshal(data, j)
 }
 
-// Project 项目模型
+// Project project model
 type Project struct {
 	Base
 	Name     string     `json:"name" gorm:"not null;size:128"`
@@ -46,12 +46,12 @@ type Project struct {
 	Config   JSONConfig `json:"config,omitempty" gorm:"type:text"`
 }
 
-// TableName 指定表名
+// TableName specifies table name
 func (Project) TableName() string {
 	return "projects"
 }
 
-// ToResponse 转换为响应结构
+// ToResponse converts to response structure
 func (p *Project) ToResponse() map[string]interface{} {
 	resp := map[string]interface{}{
 		"id":         p.ID,

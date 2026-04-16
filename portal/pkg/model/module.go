@@ -7,10 +7,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// MaxModuleLevel 最大模块层级
+// MaxModuleLevel maximum module level
 const MaxModuleLevel = 5
 
-// Module 模块模型（树形结构）
+// Module module model (tree structure)
 type Module struct {
 	Base
 	Name     string   `json:"name" gorm:"not null;size:64"`
@@ -22,12 +22,12 @@ type Module struct {
 	Children []Module `json:"children,omitempty" gorm:"-"`
 }
 
-// TableName 指定表名
+// TableName specifies table name
 func (Module) TableName() string {
 	return "modules"
 }
 
-// BeforeCreate 创建前校验和计算
+// BeforeCreate validates and calculates before creation
 func (m *Module) BeforeCreate(tx *gorm.DB) error {
 	if m.ParentID != nil {
 		var parent Module
@@ -47,7 +47,7 @@ func (m *Module) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// GetPathSegments 获取路径段
+// GetPathSegments gets path segments
 func (m *Module) GetPathSegments() []string {
 	if m.Path == "" {
 		return []string{}
@@ -62,7 +62,7 @@ func (m *Module) GetPathSegments() []string {
 	return result
 }
 
-// ToResponse 转换为响应结构
+// ToResponse converts to response structure
 func (m *Module) ToResponse() map[string]interface{} {
 	resp := map[string]interface{}{
 		"id":         m.ID,

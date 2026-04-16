@@ -2,7 +2,7 @@ package main
 
 // @title Kumquat Portal API
 // @version 1.0.0
-// @description Kumquat 多集群应用管理平台 - 用户认证与权限管理 API
+// @description Kumquat Multi-Cluster Application Management Platform - User Authentication and Authorization API
 // @termsOfService http://swagger.io/terms/
 
 // @contact.name API Support
@@ -71,13 +71,13 @@ func main() {
 	}
 	log.Info("database migrated")
 
-	// 初始化 Repository
+	// Initialize Repository
 	userRepo := repository.NewUserRepository(db)
 	roleRepo := repository.NewRoleRepository(db)
 	moduleRepo := repository.NewModuleRepository(db)
 	projectRepo := repository.NewProjectRepository(db)
 
-	// 初始化 JWT Service
+	// Initialize JWT Service
 	expireDuration, err := time.ParseDuration(cfg.JWT.ExpireDuration)
 	if err != nil {
 		expireDuration = 24 * time.Hour
@@ -88,7 +88,7 @@ func main() {
 	}
 	jwtService := service.NewJWTService(cfg.JWT.Secret, expireDuration, resetExpireDuration)
 
-	// 初始化 Service
+	// Initialize Service
 	roleService := service.NewRoleService(roleRepo, db)
 	if err := roleService.InitRoles(); err != nil {
 		log.Fatal("failed to initialize roles", "err", err)
@@ -100,19 +100,19 @@ func main() {
 	moduleService := service.NewModuleService(moduleRepo, db)
 	projectService := service.NewProjectService(projectRepo, db)
 
-	// 初始化 K8s Client（用于操作 Engine CRD）
+	// Initialize K8s Client (for operating Engine CRD)
 	k8sClient, err := k8sclient.NewK8sClient(&k8sclient.Config{
 		KubeconfigPath: cfg.Kubernetes.KubeconfigPath,
 		MasterURL:      cfg.Kubernetes.MasterURL,
 	})
 	if err != nil {
 		log.Warn("failed to initialize k8s client, k8s resources will not be available", "err", err)
-		// 不中断启动，只是 K8s 功能不可用
+		// Do not interrupt startup, only K8s features will be unavailable
 	} else {
 		log.Info("k8s client initialized")
 	}
 
-	// 初始化 K8s 相关 Service
+	// Initialize K8s related Service
 	var clusterService *service.ClusterService
 	var applicationService *service.ApplicationService
 	var workspaceService *service.WorkspaceService
@@ -122,7 +122,7 @@ func main() {
 		workspaceService = service.NewWorkspaceService(k8sClient.GetClient())
 	}
 
-	// 初始化 Middleware
+	// Initialize Middleware
 	authMiddleware := middleware.NewAuthMiddleware(jwtService)
 
 	server.Engine.Use(middleware.CORS())
@@ -224,7 +224,7 @@ func registerRoutes(engine *gin.Engine, db *gorm.DB, authService *service.AuthSe
 	restful.Install(engine, handler.NewModuleController(moduleService, roleService, authMiddleware))
 	restful.Install(engine, handler.NewProjectController(projectService, roleService, authMiddleware))
 
-	// 注册 K8s 相关路由（如果 K8s client 初始化成功）
+	// Register K8s related routes (if K8s client initialized successfully)
 	if clusterService != nil {
 		restful.Install(engine, handler.NewClusterController(clusterService, roleService, authMiddleware))
 		log.Info("cluster routes registered")

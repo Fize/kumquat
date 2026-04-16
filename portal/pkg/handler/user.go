@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CreateUserRequest 创建用户请求
+// CreateUserRequest represents create user request
 // swagger:model
 type CreateUserRequest struct {
 	Username string `json:"username" binding:"required,min=3,max=32" example:"john_doe"`
@@ -23,7 +23,7 @@ type CreateUserRequest struct {
 	ModuleID *uint  `json:"module_id" example:"1"`
 }
 
-// UpdateUserRequest 更新用户请求
+// UpdateUserRequest represents update user request
 // swagger:model
 type UpdateUserRequest struct {
 	Nickname string `json:"nickname" example:"John Updated"`
@@ -31,14 +31,14 @@ type UpdateUserRequest struct {
 	ModuleID *uint  `json:"module_id" example:"1"`
 }
 
-// UserController 用户控制器，实现 RestController 接口
+// UserController implements RestController interface
 type UserController struct {
 	svc           *service.UserService
 	rs            *service.RoleService
 	authMiddleware *middleware.AuthMiddleware
 }
 
-// NewUserController 创建用户控制器
+// NewUserController creates a new user controller
 func NewUserController(userSvc *service.UserService, roleSvc *service.RoleService, authMiddleware *middleware.AuthMiddleware) *UserController {
 	return &UserController{svc: userSvc, rs: roleSvc, authMiddleware: authMiddleware}
 }
@@ -59,18 +59,18 @@ func (c *UserController) Middlewares() []ginserver.MiddlewaresObject {
 	}
 }
 
-// List 获取用户列表
-// @Summary 获取用户列表（分页）
-// @Description 获取所有用户的分页列表，需要 admin 角色或 user:read 权限
+// List retrieves user list
+// @Summary Get user list (paginated)
+// @Description Get paginated user list, requires admin role or user:read permission
 // @Tags users
 // @Accept json
 // @Produce json
 // @Security Bearer
-// @Param page query int false "页码" default(1)
-// @Param size query int false "每页数量" default(10)
+// @Param page query int false "page number" default(1)
+// @Param size query int false "page size" default(10)
 // @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":{users},\"pagination\":{...}}"
-// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
-// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"无权限\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"unauthorized\"}"
+// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"no permission\"}"
 // @Router /users [get]
 func (c *UserController) List() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
@@ -89,18 +89,18 @@ func (c *UserController) List() (gin.HandlerFunc, error) {
 	}, nil
 }
 
-// Get 获取单个用户
-// @Summary 根据 ID 获取用户信息
-// @Description 获取指定 ID 的用户详情
+// Get retrieves a single user
+// @Summary Get user information by ID
+// @Description Get user details by specified ID
 // @Tags users
 // @Accept json
 // @Produce json
 // @Security Bearer
-// @Param id path int true "用户ID"
+// @Param id path int true "user ID"
 // @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":{user}}"
-// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"无效的用户ID\"}"
-// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
-// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"用户不存在\"}"
+// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"invalid user ID\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"unauthorized\"}"
+// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"user not found\"}"
 // @Router /users/{id} [get]
 func (c *UserController) Get() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
@@ -119,19 +119,19 @@ func (c *UserController) Get() (gin.HandlerFunc, error) {
 	}, nil
 }
 
-// Create 创建用户
-// @Summary 创建新用户
-// @Description 创建新用户账号，仅 admin 角色可操作
+// Create creates a user
+// @Summary Create new user
+// @Description Create new user account, only admin role can perform
 // @Tags users
 // @Accept json
 // @Produce json
 // @Security Bearer
-// @Param request body CreateUserRequest true "创建用户请求"
+// @Param request body CreateUserRequest true "create user request"
 // @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":{user}}"
-// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"请求参数错误\"}"
-// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
-// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"无权限\"}"
-// @Failure 409 {object} map[string]interface{} "{\"code\":409,\"message\":\"用户名或邮箱已存在\"}"
+// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"invalid request parameters\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"unauthorized\"}"
+// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"no permission\"}"
+// @Failure 409 {object} map[string]interface{} "{\"code\":409,\"message\":\"username or email already exists\"}"
 // @Router /users [post]
 func (c *UserController) Create() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
@@ -159,20 +159,20 @@ func (c *UserController) Create() (gin.HandlerFunc, error) {
 	}, nil
 }
 
-// Update 更新用户
-// @Summary 更新用户信息
-// @Description 更新指定用户的信息，仅 admin 角色可操作
+// Update updates user
+// @Summary Update user information
+// @Description Update specified user information, only admin role can perform
 // @Tags users
 // @Accept json
 // @Produce json
 // @Security Bearer
-// @Param id path int true "用户ID"
-// @Param request body UpdateUserRequest true "更新用户请求"
+// @Param id path int true "user ID"
+// @Param request body UpdateUserRequest true "update user request"
 // @Success 200 {object} map[string]interface{} "{\"code\":0,\"data\":{user}}"
-// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"请求参数错误\"}"
-// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
-// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"无权限\"}"
-// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"用户不存在\"}"
+// @Failure 400 {object} map[string]interface{} "{\"code\":400,\"message\":\"invalid request parameters\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"unauthorized\"}"
+// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"no permission\"}"
+// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"user not found\"}"
 // @Router /users/{id} [put]
 func (c *UserController) Update() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
@@ -202,18 +202,18 @@ func (c *UserController) Update() (gin.HandlerFunc, error) {
 	}, nil
 }
 
-// Delete 删除用户
-// @Summary 删除用户
-// @Description 删除指定用户，仅 admin 角色可操作。不能删除最后一个 admin 用户。
+// Delete deletes user
+// @Summary Delete user
+// @Description Delete specified user, only admin role can perform. Cannot delete last admin user.
 // @Tags users
 // @Accept json
 // @Produce json
 // @Security Bearer
-// @Param id path int true "用户ID"
+// @Param id path int true "user ID"
 // @Success 200 {object} map[string]interface{} "{\"code\":0,\"message\":\"deleted\"}"
-// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"未授权\"}"
-// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"不能删除最后一个 admin 用户\"}"
-// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"用户不存在\"}"
+// @Failure 401 {object} map[string]interface{} "{\"code\":401,\"message\":\"unauthorized\"}"
+// @Failure 403 {object} map[string]interface{} "{\"code\":403,\"message\":\"cannot delete last admin user\"}"
+// @Failure 404 {object} map[string]interface{} "{\"code\":404,\"message\":\"user not found\"}"
 // @Router /users/{id} [delete]
 func (c *UserController) Delete() (gin.HandlerFunc, error) {
 	return func(ctx *gin.Context) {
@@ -224,7 +224,7 @@ func (c *UserController) Delete() (gin.HandlerFunc, error) {
 		}
 		if err := c.svc.Delete(ctx.Request.Context(), uint(id)); err != nil {
 			log.WarnContext(ctx.Request.Context(), "delete user failed", "id", id, "err", err)
-			if errors.Is(err, errors.New("cannot delete the last admin")) {
+			if errors.Is(err, errors.New("cannot delete last admin")) {
 				utils.Forbidden(ctx, err.Error())
 			} else {
 				utils.NotFound(ctx, err.Error())

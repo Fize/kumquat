@@ -19,19 +19,19 @@ import (
 	"gorm.io/gorm"
 )
 
-// setupUserTestDB 创建测试数据库和依赖
+// setupUserTestDB creates test database and dependencies
 func setupUserTestDB(t *testing.T) (*gin.Engine, *service.UserService, *service.RoleService, *middleware.AuthMiddleware, *gorm.DB, *service.JWTService) {
 	gin.SetMode(gin.TestMode)
 
-	// 创建独立的内存 SQLite 数据库
+	// Create independent in-memory SQLite database
 	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{})
 	require.NoError(t, err)
 
-	// 迁移表结构
+	// Migrate table structure
 	err = db.AutoMigrate(&model.User{}, &model.Role{}, &model.Permission{}, &model.Module{}, &model.Project{})
 	require.NoError(t, err)
 
-	// 创建角色
+	// Create roles
 	adminRole := &model.Role{Name: model.RoleAdmin}
 	memberRole := &model.Role{Name: model.RoleMember}
 	guestRole := &model.Role{Name: model.RoleGuest}
@@ -42,15 +42,15 @@ func setupUserTestDB(t *testing.T) (*gin.Engine, *service.UserService, *service.
 	err = db.Create(guestRole).Error
 	require.NoError(t, err)
 
-	// 创建 JWT service
+	// Create JWT service
 	jwtSvc := service.NewJWTService("test-secret", time.Hour, 10*time.Minute)
 	authMiddleware := middleware.NewAuthMiddleware(jwtSvc)
 
-	// 创建 repository
+	// Create repository
 	userRepo := repository.NewUserRepository(db)
 	roleRepo := repository.NewRoleRepository(db)
 
-	// 创建 service
+	// Create service
 	userSvc := service.NewUserService(userRepo, roleRepo, db)
 	roleSvc := service.NewRoleService(roleRepo, db)
 
@@ -58,7 +58,7 @@ func setupUserTestDB(t *testing.T) (*gin.Engine, *service.UserService, *service.
 	return router, userSvc, roleSvc, authMiddleware, db, jwtSvc
 }
 
-// createAdminUser 创建管理员用户并返回 token
+// createAdminUser creates admin user and returns token
 func createAdminUser(t *testing.T, db *gorm.DB, jwtSvc *service.JWTService) (*model.User, string) {
 	user := &model.User{
 		Username: "admin",
@@ -107,7 +107,7 @@ func TestUserController_List_Unauthorized(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/api/v1/users", nil)
-	// 不提供 token
+	// No token provided
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
@@ -117,7 +117,7 @@ func TestUserController_Get_Success(t *testing.T) {
 	router, userSvc, roleSvc, authMiddleware, db, jwtSvc := setupUserTestDB(t)
 	_, adminToken := createAdminUser(t, db, jwtSvc)
 
-	// 创建测试用户
+	// Create test user
 	user := &model.User{
 		Username: "testuser",
 		Email:    "test@example.com",
@@ -221,7 +221,7 @@ func TestUserController_Create_ValidationError(t *testing.T) {
 
 	router.POST("/api/v1/users", authMiddleware.Auth(), middleware.RequireRole("admin"), handler)
 
-	// 缺少必填字段
+	// Missing required field
 	body := map[string]string{
 		"username": "newuser",
 	}
@@ -240,7 +240,7 @@ func TestUserController_Update_Success(t *testing.T) {
 	router, userSvc, roleSvc, authMiddleware, db, jwtSvc := setupUserTestDB(t)
 	_, adminToken := createAdminUser(t, db, jwtSvc)
 
-	// 创建测试用户
+	// Create test user
 	user := &model.User{
 		Username: "testuser",
 		Email:    "test@example.com",
@@ -302,7 +302,7 @@ func TestUserController_Delete_Success(t *testing.T) {
 	router, userSvc, roleSvc, authMiddleware, db, jwtSvc := setupUserTestDB(t)
 	_, adminToken := createAdminUser(t, db, jwtSvc)
 
-	// 创建测试用户（非 admin）
+	// Create test user (non-admin)
 	user := &model.User{
 		Username: "testuser",
 		Email:    "test@example.com",

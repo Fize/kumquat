@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// RoleRepository 角色 Repository 接口
+// RoleRepository role repository interface
 type RoleRepository interface {
 	GetByID(ctx context.Context, id uint) (*model.Role, error)
 	GetByName(ctx context.Context, name string) (*model.Role, error)
@@ -18,13 +18,13 @@ type RoleRepository interface {
 	CountPermissionsByRoleID(ctx context.Context, roleID uint) (int64, error)
 }
 
-// roleRepository 角色 Repository 实现
+// roleRepository role repository implementation
 type roleRepository struct {
 	*BaseRepository[model.Role]
 	db *gorm.DB
 }
 
-// NewRoleRepository 创建角色 Repository
+// NewRoleRepository creates role repository
 func NewRoleRepository(db *gorm.DB) RoleRepository {
 	return &roleRepository{
 		BaseRepository: NewBaseRepository[model.Role](db),
@@ -32,7 +32,7 @@ func NewRoleRepository(db *gorm.DB) RoleRepository {
 	}
 }
 
-// GetByName 根据名称获取
+// GetByName gets by name
 func (r *roleRepository) GetByName(ctx context.Context, name string) (*model.Role, error) {
 	var role model.Role
 	if err := r.db.WithContext(ctx).Where("name = ?", name).First(&role).Error; err != nil {
@@ -41,7 +41,7 @@ func (r *roleRepository) GetByName(ctx context.Context, name string) (*model.Rol
 	return &role, nil
 }
 
-// List 获取所有角色
+// List gets all roles
 func (r *roleRepository) List(ctx context.Context) ([]model.Role, error) {
 	var roles []model.Role
 	if err := r.db.WithContext(ctx).Find(&roles).Error; err != nil {
@@ -50,7 +50,7 @@ func (r *roleRepository) List(ctx context.Context) ([]model.Role, error) {
 	return roles, nil
 }
 
-// GetPermissionsByRoleID 获取角色权限
+// GetPermissionsByRoleID gets role permissions
 func (r *roleRepository) GetPermissionsByRoleID(ctx context.Context, roleID uint) ([]model.Permission, error) {
 	var perms []model.Permission
 	if err := r.db.WithContext(ctx).Where("role_id = ?", roleID).Find(&perms).Error; err != nil {
@@ -59,12 +59,12 @@ func (r *roleRepository) GetPermissionsByRoleID(ctx context.Context, roleID uint
 	return perms, nil
 }
 
-// CreatePermission 创建权限
+// CreatePermission creates permission
 func (r *roleRepository) CreatePermission(ctx context.Context, perm *model.Permission) error {
 	return r.db.WithContext(ctx).Create(perm).Error
 }
 
-// CountPermissionsByRoleID 统计角色权限数
+// CountPermissionsByRoleID counts role permissions
 func (r *roleRepository) CountPermissionsByRoleID(ctx context.Context, roleID uint) (int64, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&model.Permission{}).Where("role_id = ?", roleID).Count(&count).Error; err != nil {

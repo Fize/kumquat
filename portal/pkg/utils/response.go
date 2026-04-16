@@ -5,14 +5,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Response 统一响应结构
+// Response unified response structure
 type Response struct {
 	Code    int         `json:"code"`
 	Message string      `json:"message"`
 	Data    interface{} `json:"data,omitempty"`
 }
 
-// 分页响应
+// PageResult paginated response
 type PageResult struct {
 	Total int64       `json:"total"`
 	Page  int         `json:"page"`
@@ -20,33 +20,33 @@ type PageResult struct {
 	List  interface{} `json:"list"`
 }
 
-// Success 成功响应
+// Success success response
 func Success(c *gin.Context, data interface{}) {
 	c.JSON(200, Response{Code: 0, Message: "success", Data: data})
 }
 
-// SuccessWithMessage 成功响应带消息
+// SuccessWithMessage success response with message
 func SuccessWithMessage(c *gin.Context, message string, data interface{}) {
 	c.JSON(200, Response{Code: 0, Message: message, Data: data})
 }
 
-// Error 错误响应
+// Error error response
 func Error(c *gin.Context, httpCode int, code int, message string) {
 	c.JSON(httpCode, Response{Code: code, Message: message})
 }
 
-// ErrorFromAppError 从 AppError 生成错误响应
+// ErrorFromAppError generates error response from AppError
 func ErrorFromAppError(c *gin.Context, err *apperr.AppError) {
 	c.JSON(err.HTTPStatus(), Response{Code: err.Code, Message: err.Message})
 }
 
-// ErrorFromErr 从 error 生成错误响应
+// ErrorFromErr generates error response from error
 func ErrorFromErr(c *gin.Context, err error) {
 	if appErr, ok := apperr.AsAppError(err); ok {
 		ErrorFromAppError(c, appErr)
 		return
 	}
-	// 兜底：普通错误
+	// Fallback: generic error
 	msg := err.Error()
 	switch {
 	case containsAny(msg, "not found"):
@@ -104,13 +104,13 @@ func InternalError(c *gin.Context, message string) {
 	Error(c, 500, 500, message)
 }
 
-// PageSuccess 分页成功响应
+// PageSuccess paginated success response
 func PageSuccess(c *gin.Context, total int64, page, size int, list interface{}) {
 	Success(c, PageResult{Total: total, Page: page, Size: size, List: list})
 }
 
-// ErrorFromMessage 根据错误消息自动选择合适的 HTTP 状态码
-// Deprecated: 使用 ErrorFromErr 代替
+// ErrorFromMessage automatically selects appropriate HTTP status code based on error message
+// Deprecated: use ErrorFromErr instead
 func ErrorFromMessage(c *gin.Context, msg string) {
 	switch {
 	case containsAny(msg, "not found"):

@@ -19,32 +19,32 @@ import (
 	"gorm.io/gorm"
 )
 
-// setupAuthTestDB 创建测试数据库和依赖
+// setupAuthTestDB creates test database and dependencies
 func setupAuthTestDB(t *testing.T) (*gin.Engine, *service.AuthService, *middleware.AuthMiddleware, *gorm.DB, *service.JWTService) {
 	gin.SetMode(gin.TestMode)
 
-	// 创建独立的内存 SQLite 数据库（每个测试一个）
+	// Create independent in-memory SQLite database (one per test)
 	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{})
 	require.NoError(t, err)
 
-	// 迁移表结构
+	// Migrate table structure
 	err = db.AutoMigrate(&model.User{}, &model.Role{}, &model.Permission{})
 	require.NoError(t, err)
 
-	// 创建默认角色
+	// Create default role
 	role := &model.Role{Name: model.RoleGuest}
 	err = db.Create(role).Error
 	require.NoError(t, err)
 
-	// 创建 JWT service
+	// Create JWT service
 	jwtSvc := service.NewJWTService("test-secret", time.Hour, 10*time.Minute)
 	authMiddleware := middleware.NewAuthMiddleware(jwtSvc)
 
-	// 创建 repository
+	// Create repository
 	userRepo := repository.NewUserRepository(db)
 	roleRepo := repository.NewRoleRepository(db)
 
-	// 创建真实 service（使用真实 DB）
+	// Create real service (using real DB)
 	authSvc := service.NewAuthService(userRepo, roleRepo, jwtSvc, db)
 
 	router := gin.New()
@@ -54,7 +54,7 @@ func setupAuthTestDB(t *testing.T) (*gin.Engine, *service.AuthService, *middlewa
 func TestAuthController_Login_Success(t *testing.T) {
 	router, authSvc, authMiddleware, db, _ := setupAuthTestDB(t)
 
-	// 创建测试用户
+	// Create test user
 	user := &model.User{
 		Username: "testuser",
 		Email:    "test@example.com",
@@ -90,7 +90,7 @@ func TestAuthController_Login_ValidationError(t *testing.T) {
 	api := router.Group("/api/v1")
 	ctrl.SetupRoutes(api)
 
-	// 缺少 password 字段
+	// Missing password field
 	body := map[string]string{"username": "testuser"}
 	jsonBody, _ := json.Marshal(body)
 
@@ -105,7 +105,7 @@ func TestAuthController_Login_ValidationError(t *testing.T) {
 func TestAuthController_Login_InvalidCredentials(t *testing.T) {
 	router, authSvc, authMiddleware, db, _ := setupAuthTestDB(t)
 
-	// 创建测试用户
+	// Create test user
 	user := &model.User{
 		Username: "testuser",
 		Email:    "test@example.com",
@@ -163,7 +163,7 @@ func TestAuthController_DoRegister_ValidationError(t *testing.T) {
 	api := router.Group("/api/v1")
 	ctrl.SetupRoutes(api)
 
-	// 密码太短（少于6位）
+	// Password too short (less than 6 characters)
 	body := map[string]string{
 		"username": "newuser",
 		"email":    "new@example.com",
@@ -182,7 +182,7 @@ func TestAuthController_DoRegister_ValidationError(t *testing.T) {
 func TestAuthController_Me_Success(t *testing.T) {
 	router, authSvc, authMiddleware, db, jwtSvc := setupAuthTestDB(t)
 
-	// 创建测试用户
+	// Create test user
 	user := &model.User{
 		Username: "testuser",
 		Email:    "test@example.com",
@@ -196,7 +196,7 @@ func TestAuthController_Me_Success(t *testing.T) {
 	api := router.Group("/api/v1")
 	ctrl.SetupRoutes(api)
 
-	// 生成有效 token
+	// Generate valid token
 	token, err := jwtSvc.GenerateToken(user.ID, user.Username, user.RoleID, "guest")
 	require.NoError(t, err)
 
@@ -220,7 +220,7 @@ func TestAuthController_Me_Unauthorized(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
-	// 不提供 token
+	// No token provided
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
@@ -229,7 +229,7 @@ func TestAuthController_Me_Unauthorized(t *testing.T) {
 func TestAuthController_ChangePassword_Success(t *testing.T) {
 	router, authSvc, authMiddleware, db, jwtSvc := setupAuthTestDB(t)
 
-	// 创建测试用户
+	// Create test user
 	user := &model.User{
 		Username: "testuser",
 		Email:    "test@example.com",
@@ -243,7 +243,7 @@ func TestAuthController_ChangePassword_Success(t *testing.T) {
 	api := router.Group("/api/v1")
 	ctrl.SetupRoutes(api)
 
-	// 生成有效 token
+	// Generate valid token
 	token, err := jwtSvc.GenerateToken(user.ID, user.Username, user.RoleID, "guest")
 	require.NoError(t, err)
 
@@ -268,7 +268,7 @@ func TestAuthController_ChangePassword_Success(t *testing.T) {
 func TestAuthController_ChangePassword_ValidationError(t *testing.T) {
 	router, authSvc, authMiddleware, db, jwtSvc := setupAuthTestDB(t)
 
-	// 创建测试用户
+	// Create test user
 	user := &model.User{
 		Username: "testuser",
 		Email:    "test@example.com",
@@ -284,7 +284,7 @@ func TestAuthController_ChangePassword_ValidationError(t *testing.T) {
 
 	token, _ := jwtSvc.GenerateToken(user.ID, user.Username, user.RoleID, "guest")
 
-	// 缺少 newPassword
+	// Missing newPassword
 	body := map[string]string{"oldPassword": "oldpass123"}
 	jsonBody, _ := json.Marshal(body)
 
@@ -300,7 +300,7 @@ func TestAuthController_ChangePassword_ValidationError(t *testing.T) {
 func TestAuthController_ChangePassword_WrongOldPassword(t *testing.T) {
 	router, authSvc, authMiddleware, db, jwtSvc := setupAuthTestDB(t)
 
-	// 创建测试用户
+	// Create test user
 	user := &model.User{
 		Username: "testuser",
 		Email:    "test@example.com",
