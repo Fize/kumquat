@@ -59,6 +59,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		metrics.RemoveClusterMetrics(req.Name)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+	original := cluster.DeepCopy()
 
 	ctx, span := observability.Tracer().Start(ctx, "ClusterReconcile",
 		trace.WithAttributes(
@@ -85,17 +86,17 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	if mode == clusterv1alpha1.ClusterConnectionModeHub {
-		return r.reconcileHub(ctx, &cluster)
+		return r.reconcileHub(ctx, &cluster, original)
 	}
-	return r.reconcileEdge(ctx, &cluster)
+	return r.reconcileEdge(ctx, &cluster, original)
 }
 
-func (r *ClusterReconciler) reconcileHub(ctx context.Context, cluster *clusterv1alpha1.ManagedCluster) (ctrl.Result, error) {
+func (r *ClusterReconciler) reconcileHub(ctx context.Context, cluster, original *clusterv1alpha1.ManagedCluster) (ctrl.Result, error) {
 	if cluster.Spec.SecretRef == nil || cluster.Spec.SecretRef.Name == "" {
 		if cluster.Status.State != clusterv1alpha1.ClusterRejected {
 			cluster.Status.State = clusterv1alpha1.ClusterRejected
 			metrics.SetClusterConnectionState(cluster.Name, false)
-			return ctrl.Result{}, r.updateStatus(ctx, cluster)
+			return ctrl.Result{}, r.patchStatus(ctx, cluster, original)
 		}
 		return ctrl.Result{}, nil
 	}
@@ -106,7 +107,8 @@ func (r *ClusterReconciler) reconcileHub(ctx context.Context, cluster *clusterv1
 				existing.Status.ID = uuid.New().String()
 			}
 			existing.Status.State = clusterv1alpha1.ClusterReady
-			if err := r.updateStatus(ctx, existing); err != nil {
+			existingOriginal := existing.DeepCopy()
+			if err := r.Status().Patch(ctx, existing, client.MergeFrom(existingOriginal)); err != nil {
 				return ctrl.Result{}, err
 			}
 			if err := r.Delete(ctx, cluster); err != nil {
@@ -120,7 +122,7 @@ func (r *ClusterReconciler) reconcileHub(ctx context.Context, cluster *clusterv1
 		}
 		cluster.Status.State = clusterv1alpha1.ClusterReady
 		metrics.SetClusterConnectionState(cluster.Name, true)
-		if err := r.updateStatus(ctx, cluster); err != nil {
+		if err := r.patchStatus(ctx, cluster, original); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
@@ -129,14 +131,14 @@ func (r *ClusterReconciler) reconcileHub(ctx context.Context, cluster *clusterv1
 	return ctrl.Result{}, nil
 }
 
-func (r *ClusterReconciler) reconcileEdge(ctx context.Context, cluster *clusterv1alpha1.ManagedCluster) (ctrl.Result, error) {
+func (r *ClusterReconciler) reconcileEdge(ctx context.Context, cluster, original *clusterv1alpha1.ManagedCluster) (ctrl.Result, error) {
 	// 1. Handle Credentials from Annotations
 	if cluster.Annotations != nil {
 		hasCredentials := cluster.Annotations[constants.AnnotationCredentialsToken] != "" ||
 			cluster.Annotations[constants.AnnotationCredentialsCert] != "" ||
 			cluster.Annotations[constants.AnnotationCredentialsCA] != ""
 		if hasCredentials {
-			if err := r.handleEdgeCredentials(ctx, cluster); err != nil {
+			if err := r.handleEdgeCredentials(ctx, cluster, original); err != nil {
 				return ctrl.Result{}, err
 			}
 			// After handling credentials, we update the object and return to re-reconcile
@@ -147,7 +149,7 @@ func (r *ClusterReconciler) reconcileEdge(ctx context.Context, cluster *clusterv
 	// 2. Ensure ID exists
 	if cluster.Status.ID == "" {
 		cluster.Status.ID = uuid.New().String()
-		if err := r.updateStatus(ctx, cluster); err != nil {
+		if err := r.patchStatus(ctx, cluster, original); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -163,7 +165,7 @@ func (r *ClusterReconciler) reconcileEdge(ctx context.Context, cluster *clusterv
 				metrics.SetClusterConnectionState(cluster.Name, false)
 				ctrl.Log.Info("Cluster went offline", "cluster", cluster.Name, "last_heartbeat", cluster.Status.LastKeepAliveTime.Time)
 				observability.SpanError(ctx, fmt.Errorf("heartbeat timeout: %v", heartbeatLatency))
-				if err := r.updateStatus(ctx, cluster); err != nil {
+				if err := r.patchStatus(ctx, cluster, original); err != nil {
 					return ctrl.Result{}, err
 				}
 			}
@@ -173,7 +175,7 @@ func (r *ClusterReconciler) reconcileEdge(ctx context.Context, cluster *clusterv
 			if cluster.Status.State != clusterv1alpha1.ClusterReady && cluster.Status.State != clusterv1alpha1.ClusterOffline {
 				cluster.Status.State = clusterv1alpha1.ClusterReady
 				metrics.SetClusterConnectionState(cluster.Name, true)
-				if err := r.updateStatus(ctx, cluster); err != nil {
+				if err := r.patchStatus(ctx, cluster, original); err != nil {
 					return ctrl.Result{}, err
 				}
 			}
@@ -183,7 +185,7 @@ func (r *ClusterReconciler) reconcileEdge(ctx context.Context, cluster *clusterv
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
 
-func (r *ClusterReconciler) handleEdgeCredentials(ctx context.Context, cluster *clusterv1alpha1.ManagedCluster) error {
+func (r *ClusterReconciler) handleEdgeCredentials(ctx context.Context, cluster, original *clusterv1alpha1.ManagedCluster) error {
 	caDataB64 := cluster.Annotations[constants.AnnotationCredentialsCA]
 	token := cluster.Annotations[constants.AnnotationCredentialsToken]
 	apiServerURL := cluster.Annotations[constants.AnnotationAPIServerURL]
@@ -227,15 +229,10 @@ func (r *ClusterReconciler) handleEdgeCredentials(ctx context.Context, cluster *
 		return err
 	}
 
-	// Update Cluster Status
+	// Update Cluster Status and Spec
 	cluster.Status.APIServerURL = apiServerURL
 	cluster.Status.State = clusterv1alpha1.ClusterReady
 	metrics.SetClusterConnectionState(cluster.Name, true)
-	if err := r.updateStatus(ctx, cluster); err != nil {
-		return err
-	}
-
-	// Update Cluster Spec and Remove Annotations
 	cluster.Spec.SecretRef = &corev1.LocalObjectReference{Name: secretName}
 	delete(cluster.Annotations, constants.AnnotationCredentialsCA)
 	delete(cluster.Annotations, constants.AnnotationCredentialsToken)
@@ -243,11 +240,11 @@ func (r *ClusterReconciler) handleEdgeCredentials(ctx context.Context, cluster *
 	delete(cluster.Annotations, constants.AnnotationCredentialsCert)
 	delete(cluster.Annotations, constants.AnnotationCredentialsKey)
 
-	return r.Update(ctx, cluster)
+	return r.Patch(ctx, cluster, client.MergeFrom(original))
 }
 
-func (r *ClusterReconciler) updateStatus(ctx context.Context, cluster *clusterv1alpha1.ManagedCluster) error {
-	return r.Status().Update(ctx, cluster)
+func (r *ClusterReconciler) patchStatus(ctx context.Context, cluster, original *clusterv1alpha1.ManagedCluster) error {
+	return r.Status().Patch(ctx, cluster, client.MergeFrom(original))
 }
 
 func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {

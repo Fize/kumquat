@@ -1,0 +1,33 @@
+server:
+  bindAddr: ":8080"
+  metrics:
+    enabled: true
+    serviceName: portal
+    path: /metrics
+    port: 9090
+  trace:
+    enabled: false
+    serviceName: portal
+    stdout: true
+
+sql:
+  type: sqlite3
+  host: "/data/portal.db"
+  user: ""
+  password: ""
+  db: ""
+  maxIdleConns: 10
+  maxOpenConns: 100
+  debug: false
+
+log:
+  level: info
+  format: json
+
+jwt:
+  secret: "kumquat-demo-jwt-secret-change-in-production"
+  expire_duration: 24h
+  reset_expire_duration: 10m
+
+security:
+  allowed_email_domains: []

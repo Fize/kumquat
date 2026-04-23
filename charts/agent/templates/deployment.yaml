@@ -29,13 +29,17 @@ spec:
         - args:
           - --health-probe-bind-address=:8081
           - --metrics-bind-address=127.0.0.1:8080
-          - --leader-elect=true
+          - --leader-elect=false
           - --zap-log-level={{ .Values.logLevel | default 3 }}
           - --zap-encoder={{ .Values.logEncoder | default "console" }}
-          - --name={{ .Values.clustername }}
+          - --cluster-name={{ .Values.clustername }}
           - --bootstrap-token={{ .Values.manager.token }}
-          - --master-url={{ .Values.manager.master }}
-          - --enabled-schemes={{ .Values.enableSchemes }}
+          - --hub-url={{ .Values.manager.master }}
+          {{- if .Values.manager.tunnel }}
+          - --tunnel-url={{ .Values.manager.tunnel }}
+          {{- else }}
+          - --tunnel-url={{ .Values.manager.master }}
+          {{- end }}
           {{- with .Values.manager.region }}
           - --region={{ . }}
           {{- end }}

@@ -21,6 +21,10 @@ logEncoder: json
 
 tunnelPort: 5443
 
+service:
+  type: ClusterIP
+  # nodePort: 30443
+
 # APIService configuration
 # The aggregated APIServer provides virtual Cluster resources (cluster.kumquat.io/v1alpha1)
 # backed by ManagedCluster CRDs (storage.kumquat.io/v1alpha1)

@@ -157,12 +157,14 @@ func main() {
 			}
 		}()
 
-		// Setup addon reconciler to watch ManagedCluster from Hub
-		if err := (&addon.AddonReconciler{
+		// Setup addon reconciler to reconcile addons from Hub
+		addonReconciler := &addon.AddonReconciler{
 			HubClient:   clusterAgent.HubClient,
+			LocalClient: mgr.GetClient(),
 			Scheme:      scheme.Scheme,
 			ClusterName: clusterName,
-		}).SetupWithManager(mgr); err != nil {
+		}
+		if err := addonReconciler.SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create addon reconciler")
 			os.Exit(1)
 		}

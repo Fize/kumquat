@@ -41,6 +41,11 @@ func (r *AddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Only reconcile addons for Hub clusters. Edge clusters are handled by their agents.
+	if cluster.Spec.ConnectionMode != "Hub" {
+		return ctrl.Result{}, nil
+	}
+
 	ctx, span := observability.Tracer().Start(ctx, "AddonReconcile",
 		trace.WithAttributes(
 			attribute.String("cluster.name", cluster.Name),

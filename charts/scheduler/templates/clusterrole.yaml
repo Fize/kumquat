@@ -12,15 +12,15 @@ rules:
   - list
   - watch
 - apiGroups:
-  - kumquat.io
+  - storage.kumquat.io
   resources:
-  - clusters
+  - managedclusters
   verbs:
   - get
   - list
   - watch
 - apiGroups:
-  - kumquat.io
+  - apps.kumquat.io
   resources:
   - applications
   verbs:
@@ -29,7 +29,7 @@ rules:
   - watch
   - update
 - apiGroups:
-  - kumquat.io
+  - apps.kumquat.io
   resources:
   - applications/status
   verbs:
