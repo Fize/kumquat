@@ -14,10 +14,10 @@ COPY pkg/ pkg/
 COPY internal/ internal/
 
 # Build manager
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o manager cmd/manager/manager.go
+RUN CGO_ENABLED=0 GOOS=linux go build -a -o manager cmd/manager/manager.go
 
 # Build agent
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o agent cmd/agent/agent.go
+RUN CGO_ENABLED=0 GOOS=linux go build -a -o agent cmd/agent/agent.go
 
 # Final image
 FROM alpine:latest

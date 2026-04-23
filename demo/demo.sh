@@ -152,7 +152,7 @@ build_images() {
 
     # Build engine image (manager + agent)
     log_step "Building engine image (${ENGINE_IMAGE})..."
-    docker build -t "${ENGINE_IMAGE}" \
+    docker build --no-cache -t "${ENGINE_IMAGE}" \
         -f "${PROJECT_ROOT}/engine/Dockerfile" \
         "${PROJECT_ROOT}/engine/"
 
@@ -162,12 +162,12 @@ build_images() {
     # Build portal image
     log_step "Building portal image (${PORTAL_IMAGE})..."
     if [[ -f "${PROJECT_ROOT}/portal/Dockerfile" ]]; then
-        docker build -t "${PORTAL_IMAGE}" \
+        docker build --no-cache -t "${PORTAL_IMAGE}" \
             -f "${PROJECT_ROOT}/portal/Dockerfile" \
             "${PROJECT_ROOT}"
     else
         # Use demo Dockerfile if portal doesn't have its own
-        docker build -t "${PORTAL_IMAGE}" \
+        docker build --no-cache -t "${PORTAL_IMAGE}" \
             -f "${SCRIPT_DIR}/config/portal-Dockerfile" \
             "${PROJECT_ROOT}"
     fi
@@ -395,6 +395,8 @@ deploy_hub() {
         --set image.tag=demo \
         --set image.pullPolicy=IfNotPresent \
         --set tunnelPort=5443 \
+        --set service.type=NodePort \
+        --set service.nodePort=30443 \
         --set insecureSkipTLSVerify=true \
         --wait --timeout 300s || {
         log_warn "Helm install for manager may have issues, continuing..."
@@ -429,6 +431,52 @@ deploy_portal() {
     # Create portal namespace
     kubectl --context "$ctx" create namespace portal \
         --dry-run=client -o yaml | kubectl --context "$ctx" apply -f -
+
+    # Create portal ServiceAccount and RBAC
+    kubectl --context "$ctx" apply -f - <<EOF
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: portal
+  namespace: portal
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: portal-manager
+rules:
+  - apiGroups: ["cluster.kumquat.io"]
+    resources: ["clusters"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["cluster.kumquat.io"]
+    resources: ["clusters/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["apps.kumquat.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps.kumquat.io"]
+    resources: ["applications/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["workspace.kumquat.io"]
+    resources: ["workspaces"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["workspace.kumquat.io"]
+    resources: ["workspaces/status"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: portal-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: portal-manager
+subjects:
+  - kind: ServiceAccount
+    name: portal
+    namespace: portal
+EOF
 
     # Create portal ConfigMap
     kubectl --context "$ctx" create configmap portal-config \
@@ -468,6 +516,7 @@ spec:
       labels:
         app: portal
     spec:
+      serviceAccountName: portal
       containers:
         - name: portal
           image: "${PORTAL_IMAGE}"
@@ -550,7 +599,7 @@ deploy_sub_clusters() {
             --set clustername="${sub}" \
             --set manager.token="${BOOTSTRAP_TOKEN}" \
             --set manager.master="https://${hub_ip}:6443" \
-            --set manager.tunnel="https://${hub_ip}:5443" \
+            --set manager.tunnel="https://${hub_ip}:30443" \
             --wait --timeout 300s || {
             log_warn "Helm install for agent on ${sub} may have issues, continuing..."
         }
