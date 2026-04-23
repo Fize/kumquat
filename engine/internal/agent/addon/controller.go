@@ -2,10 +2,12 @@ package addon
 
 import (
 	"context"
+	"time"
 
 	"github.com/fize/kumquat/engine/internal/addon"
 	storagev1alpha1 "github.com/fize/kumquat/engine/pkg/apis/storage/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -14,6 +16,7 @@ import (
 // AddonReconciler reconciles Addons on ManagedCluster from the Agent side
 type AddonReconciler struct {
 	HubClient   client.Client
+	LocalClient client.Client
 	Scheme      *runtime.Scheme
 	ClusterName string
 	Controllers map[string]addon.AddonController
@@ -74,7 +77,7 @@ func (r *AddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		addonConfig := addon.AddonConfig{
 			ClusterName: cluster.Name,
 			Config:      config,
-			Client:      r.HubClient,
+			Client:      r.LocalClient,
 		}
 
 		logger.Info("Calling AgentController.Reconcile", "addon", a.Name())
@@ -103,7 +106,36 @@ func (r *AddonReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 	}
 
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&storagev1alpha1.ManagedCluster{}).
-		Complete(r)
+	// Register as a Runnable so mgr.Start will invoke Start() periodically.
+	return mgr.Add(r)
+}
+
+// Start implements the manager.Runnable interface for periodic reconciliation.
+// Since Sub clusters typically do not have the ManagedCluster CRD installed,
+// we cannot rely on controller-runtime watches. Instead we poll the Hub
+// every 30 seconds and reconcile addons locally.
+func (r *AddonReconciler) Start(ctx context.Context) error {
+	logger := log.FromContext(ctx)
+	logger.Info("Starting periodic addon reconciliation", "cluster", r.ClusterName)
+
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: r.ClusterName}}
+
+	// Initial reconciliation
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		logger.Error(err, "Initial addon reconciliation failed")
+	}
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			if _, err := r.Reconcile(ctx, req); err != nil {
+				logger.Error(err, "Periodic addon reconciliation failed")
+			}
+		}
+	}
 }

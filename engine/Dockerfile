@@ -24,6 +24,13 @@ FROM alpine:latest
 WORKDIR /
 COPY --from=builder /workspace/manager .
 COPY --from=builder /workspace/agent .
+
+# Create home directory for non-root user so Helm libraries can write cache
+RUN mkdir -p /home/nonroot/.cache/helm && chown -R 65532:65532 /home/nonroot
+ENV HOME=/home/nonroot
+ENV HELM_CACHE_HOME=/home/nonroot/.cache/helm
+ENV XDG_CACHE_HOME=/home/nonroot/.cache
+
 USER 65532:65532
 # Default to manager, but can be overridden by command/args
 ENTRYPOINT ["/manager"]

@@ -63,9 +63,12 @@ func (c *ManagerController) Reconcile(ctx context.Context, config addon.AddonCon
 	}
 
 	// Prepare default values
+	// Set createNamespace=false so the chart does not create the namespace itself;
+	// Helm's CreateNamespace=true will handle namespace creation with proper ownership labels.
 	values := map[string]interface{}{
 		"installation": map[string]interface{}{
-			"namespace": DefaultNamespace,
+			"namespace":       DefaultNamespace,
+			"createNamespace": false,
 		},
 	}
 
@@ -80,6 +83,13 @@ func (c *ManagerController) Reconcile(ctx context.Context, config addon.AddonCon
 	}
 	if extraValues != nil {
 		values = mergeValues(values, extraValues)
+	}
+
+	// Ensure namespace has Helm ownership labels before installing
+	if config.Client != nil {
+		if err := helm.EnsureNamespaceWithHelmLabels(ctx, config.Client, DefaultNamespace); err != nil {
+			return fmt.Errorf("failed to ensure namespace %s: %w", DefaultNamespace, err)
+		}
 	}
 
 	// Install or upgrade kruise-rollout
@@ -199,10 +209,12 @@ func (c *AgentController) Reconcile(ctx context.Context, config addon.AddonConfi
 	}
 
 	// Prepare default values
+	// Set createNamespace=false so the chart does not create the namespace itself;
+	// Helm's CreateNamespace=true will handle namespace creation with proper ownership labels.
 	values := map[string]interface{}{
-		// Default installation configuration
 		"installation": map[string]interface{}{
-			"namespace": DefaultNamespace,
+			"namespace":       DefaultNamespace,
+			"createNamespace": false,
 		},
 	}
 
@@ -217,6 +229,13 @@ func (c *AgentController) Reconcile(ctx context.Context, config addon.AddonConfi
 	}
 	if extraValues != nil {
 		values = mergeValues(values, extraValues)
+	}
+
+	// Ensure namespace has Helm ownership labels before installing
+	if config.Client != nil {
+		if err := helm.EnsureNamespaceWithHelmLabels(ctx, config.Client, DefaultNamespace); err != nil {
+			return fmt.Errorf("failed to ensure namespace %s: %w", DefaultNamespace, err)
+		}
 	}
 
 	// Install or upgrade kruise-rollout

@@ -1,0 +1,52 @@
+# Canary Rollout Demo
+# 10-replica Nginx with 3-step canary rollout (20% -> 50% -> 100%)
+apiVersion: apps.kumquat.io/v1alpha1
+kind: Application
+metadata:
+  name: canary-demo
+  namespace: default
+spec:
+  workload:
+    apiVersion: apps/v1
+    kind: Deployment
+  template:
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: canary-demo
+      labels:
+        app: canary-demo
+    spec:
+      selector:
+        matchLabels:
+          app: canary-demo
+      template:
+        metadata:
+          labels:
+            app: canary-demo
+        spec:
+          containers:
+            - name: nginx
+              image: nginx:1.25
+              ports:
+                - containerPort: 80
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+  replicas: 10
+  placement:
+    clusterSelector:
+      matchLabels:
+        connectionMode: Edge
+  rolloutStrategy:
+    type: Canary
+    canary:
+      steps:
+        - weight: 20
+          pause:
+            duration: 60
+        - weight: 50
+          pause:
+            duration: 60
+        - weight: 100

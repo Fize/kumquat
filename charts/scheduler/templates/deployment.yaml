@@ -29,11 +29,14 @@ spec:
         - args:
           - --health-probe-bind-address=:8081
           - --metrics-bind-address=:8080
-          - --leader-elect
+          - --leader-elect=false
           - --zap-log-level={{ .Values.logLevel | default 3 }}
           - --zap-encoder={{ .Values.logEncoder | default "console" }}
+          - --enabled-controllers=Scheduler
+          - --disabled-apiserver=true
+          - --disabled-webhook=true
           command:
-          - /scheduler
+          - /manager
           name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}

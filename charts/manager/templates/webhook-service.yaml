@@ -10,10 +10,13 @@ spec:
     port: 443
     protocol: TCP
     targetPort: {{ .Values.tunnelPort | default 5443 }}
+    {{- if eq .Values.service.type "NodePort" }}
+    nodePort: {{ .Values.service.nodePort }}
+    {{- end }}
   - name: https-webhook
     port: 9443
     protocol: TCP
     targetPort: 9443
   selector:
     {{- include "manager.selectorLabels" . | nindent 4 }}
-  type: ClusterIP
+  type: {{ .Values.service.type | default "ClusterIP" }}

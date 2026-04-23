@@ -209,6 +209,11 @@ func initDB(cfg *PortalConfig, logger *log.Logger) (*gorm.DB, error) {
 
 func registerRoutes(engine *gin.Engine, db *gorm.DB, authService *service.AuthService, userService *service.UserService, moduleService *service.ModuleService, projectService *service.ProjectService, roleService *service.RoleService, authMiddleware *middleware.AuthMiddleware,
 	clusterService *service.ClusterService, applicationService *service.ApplicationService, workspaceService *service.WorkspaceService) {
+	// Health check endpoint
+	engine.GET("/healthz", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
+
 	// Swagger UI
 	engine.GET("/swagger/*any", swagger.WrapHandler(swaggerFiles.Handler))
 
@@ -217,24 +222,34 @@ func registerRoutes(engine *gin.Engine, db *gorm.DB, authService *service.AuthSe
 	authHandler := handler.NewAuthController(authService, authMiddleware)
 	authHandler.SetupRoutes(api)
 
-	restful := &ginserver.RestfulAPI{}
+	// Register controllers with RestfulAPI - each needs its own instance with PostParameter set
+	// to distinguish List (GET /resources) from Get (GET /resources/:id)
+	userRestful := &ginserver.RestfulAPI{PostParameter: ":id"}
+	userRestful.Install(engine, handler.NewUserController(userService, roleService, authMiddleware))
 
-	restful.Install(engine, handler.NewUserController(userService, roleService, authMiddleware))
-	restful.Install(engine, handler.NewRoleController(roleService, authMiddleware))
-	restful.Install(engine, handler.NewModuleController(moduleService, roleService, authMiddleware))
-	restful.Install(engine, handler.NewProjectController(projectService, roleService, authMiddleware))
+	roleRestful := &ginserver.RestfulAPI{PostParameter: ":id"}
+	roleRestful.Install(engine, handler.NewRoleController(roleService, authMiddleware))
+
+	moduleRestful := &ginserver.RestfulAPI{PostParameter: ":id"}
+	moduleRestful.Install(engine, handler.NewModuleController(moduleService, roleService, authMiddleware))
+
+	projectRestful := &ginserver.RestfulAPI{PostParameter: ":id"}
+	projectRestful.Install(engine, handler.NewProjectController(projectService, roleService, authMiddleware))
 
 	// Register K8s related routes (if K8s client initialized successfully)
 	if clusterService != nil {
-		restful.Install(engine, handler.NewClusterController(clusterService, roleService, authMiddleware))
+		clusterRestful := &ginserver.RestfulAPI{PostParameter: ":id"}
+		clusterRestful.Install(engine, handler.NewClusterController(clusterService, roleService, authMiddleware))
 		log.Info("cluster routes registered")
 	}
 	if applicationService != nil {
-		restful.Install(engine, handler.NewApplicationController(applicationService, roleService, authMiddleware))
+		appRestful := &ginserver.RestfulAPI{PostParameter: ":id"}
+		appRestful.Install(engine, handler.NewApplicationController(applicationService, roleService, authMiddleware))
 		log.Info("application routes registered")
 	}
 	if workspaceService != nil {
-		restful.Install(engine, handler.NewWorkspaceController(workspaceService, roleService, authMiddleware))
+		wsRestful := &ginserver.RestfulAPI{PostParameter: ":id"}
+		wsRestful.Install(engine, handler.NewWorkspaceController(workspaceService, roleService, authMiddleware))
 		log.Info("workspace routes registered")
 	}
 
