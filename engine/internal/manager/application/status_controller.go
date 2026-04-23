@@ -3,7 +3,9 @@ package application
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/fize/kumquat/engine/internal/manager/cluster"
 	appsv1alpha1 "github.com/fize/kumquat/engine/pkg/apis/apps/v1alpha1"
@@ -44,6 +46,13 @@ func (r *StatusReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, nil
 	}
 
+	// If not yet scheduled, nothing to do
+	if len(app.Status.AppliedClusters) == 0 {
+		return ctrl.Result{}, nil
+	}
+
+	needsRequeue := false
+
 	// Ensure we are watching the clusters where this app is deployed
 	for _, clusterName := range app.Status.AppliedClusters {
 		// Check sharding responsibility
@@ -53,6 +62,10 @@ func (r *StatusReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 		if err := r.ensureWatch(ctx, clusterName, app.Spec.Workload); err != nil {
 			log.FromContext(ctx).Error(err, "Failed to ensure watch for cluster", "cluster", clusterName)
+			// If tunnel is not connected yet, we need to requeue
+			if isTunnelNotConnected(err) {
+				needsRequeue = true
+			}
 		}
 	}
 
@@ -62,33 +75,35 @@ func (r *StatusReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, err
 	}
 
-	// Update status if changed
-	// We only update the clusters we are responsible for.
-	// But we need to merge with existing status?
-	// If we use SSA, we can just send the list of clusters we manage.
-	// But controller-runtime Update() is not SSA by default.
-	// We need to Patch() with Apply.
-
-	// For now, let's assume we are the only one updating (Leader Election) OR we implement merging.
-	// Since we added +listMapKey, we can try to update only our entries?
-	// But standard Update replaces the whole status.
-	// We need to use Patch with Apply.
+	// Check if any cluster has tunnel connection issues in the aggregated status
+	for _, cs := range newStatus.ClustersStatus {
+		if strings.Contains(cs.Message, "not connected via tunnel") {
+			needsRequeue = true
+		}
+	}
 
 	patch := client.MergeFrom(app.DeepCopy())
 	app.Status.ClustersStatus = r.mergeClusterStatus(app.Status.ClustersStatus, newStatus.ClustersStatus)
-	// Phase calculation needs global view.
-	// If we are sharded, we can't calculate global Phase easily unless we read the full status first.
-	// We read 'app' at the beginning. It has the current status (from all shards).
-	// We update our part.
-	// Then we recalculate Phase based on the merged status.
-
 	app.Status.HealthPhase = r.calculatePhase(app.Status.ClustersStatus)
 
 	if err := r.Status().Patch(ctx, app, patch); err != nil {
 		return ctrl.Result{}, err
 	}
 
+	// If any cluster had tunnel connection issues, requeue to retry later
+	if needsRequeue {
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+
 	return ctrl.Result{}, nil
+}
+
+// isTunnelNotConnected checks if the error is due to tunnel not being connected
+func isTunnelNotConnected(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "not connected via tunnel")
 }
 
 func (r *StatusReconciler) mergeClusterStatus(existing, new []appsv1alpha1.ClusterStatus) []appsv1alpha1.ClusterStatus {

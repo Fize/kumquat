@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/rancher/remotedialer"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -40,9 +41,10 @@ type AgentOptions struct {
 
 // Agent is the edge agent that connects to the Hub
 type Agent struct {
-	Options   AgentOptions
-	HubClient client.Client
-	HubConfig *rest.Config
+	Options     AgentOptions
+	HubClient   client.Client
+	HubConfig   *rest.Config
+	LocalClient client.Client
 }
 
 // NewAgent creates a new Agent with the given options
@@ -196,6 +198,17 @@ func (a *Agent) sendHeartbeat(ctx context.Context) error {
 	now := metav1.Now()
 	cluster.Status.LastKeepAliveTime = &now
 
+	// Collect and update resource summary from local cluster
+	if a.LocalClient != nil {
+		if rs := a.collectResourceSummary(ctx); rs != nil {
+			cluster.Status.ResourceSummary = rs
+		}
+		// Collect and update node summary from local cluster
+		if ns := a.collectNodeSummary(ctx); ns != nil {
+			cluster.Status.NodeSummary = ns
+		}
+	}
+
 	if err := a.HubClient.Status().Update(ctx, cluster); err != nil {
 		err = a.HubClient.Update(ctx, cluster)
 		agentmetrics.RecordHeartbeat("error", time.Since(startTime))
@@ -204,6 +217,107 @@ func (a *Agent) sendHeartbeat(ctx context.Context) error {
 	}
 	agentmetrics.RecordHeartbeat("success", time.Since(startTime))
 	return nil
+}
+
+// collectResourceSummary collects resource information from the local cluster nodes
+// and returns a ResourceSummary slice for reporting to the Hub.
+func (a *Agent) collectResourceSummary(ctx context.Context) []clusterv1alpha1.ResourceSummary {
+	nodeList := &corev1.NodeList{}
+	if err := a.LocalClient.List(ctx, nodeList); err != nil {
+		log.Log.Error(err, "Failed to list nodes for resource summary")
+		return nil
+	}
+
+	podList := &corev1.PodList{}
+	if err := a.LocalClient.List(ctx, podList); err != nil {
+		log.Log.Error(err, "Failed to list pods for resource summary")
+		return nil
+	}
+
+	var totalAllocatable, totalAllocated corev1.ResourceList
+
+	// Sum allocatable resources from all nodes
+	for i := range nodeList.Items {
+		node := &nodeList.Items[i]
+		if totalAllocatable == nil {
+			totalAllocatable = make(corev1.ResourceList)
+		}
+		for name, quantity := range node.Status.Allocatable {
+			if existing, ok := totalAllocatable[name]; ok {
+				existing.Add(quantity)
+				totalAllocatable[name] = existing
+			} else {
+				totalAllocatable[name] = quantity.DeepCopy()
+			}
+		}
+	}
+
+	// Sum allocated resources from running pods
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
+			continue
+		}
+		if totalAllocated == nil {
+			totalAllocated = make(corev1.ResourceList)
+		}
+		for _, container := range pod.Spec.Containers {
+			for name, quantity := range container.Resources.Requests {
+				if existing, ok := totalAllocated[name]; ok {
+					existing.Add(quantity)
+					totalAllocated[name] = existing
+				} else {
+					totalAllocated[name] = quantity.DeepCopy()
+				}
+			}
+		}
+	}
+
+	if totalAllocatable == nil {
+		return nil
+	}
+
+	if totalAllocated == nil {
+		totalAllocated = make(corev1.ResourceList)
+	}
+
+	return []clusterv1alpha1.ResourceSummary{
+		{
+			Name:        "default",
+			Allocatable: totalAllocatable,
+			Allocated:   totalAllocated,
+		},
+	}
+}
+
+// collectNodeSummary collects node status information from the local cluster
+// and returns a NodeSummary slice for reporting to the Hub.
+func (a *Agent) collectNodeSummary(ctx context.Context) []clusterv1alpha1.NodeSummary {
+	nodeList := &corev1.NodeList{}
+	if err := a.LocalClient.List(ctx, nodeList); err != nil {
+		log.Log.Error(err, "Failed to list nodes for node summary")
+		return nil
+	}
+
+	var totalNum, readyNum int
+	for i := range nodeList.Items {
+		node := &nodeList.Items[i]
+		totalNum++
+		for _, cond := range node.Status.Conditions {
+			if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
+				readyNum++
+				break
+			}
+		}
+	}
+
+	return []clusterv1alpha1.NodeSummary{
+		{
+			Name:     "default",
+			TotalNum: totalNum,
+			ReadyNum: readyNum,
+		},
+	}
 }
 
 func (a *Agent) StartTunnel(ctx context.Context) error {

@@ -75,11 +75,6 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		metrics.SetManagedClusterTotal(len(clusterList.Items))
 	}
 
-	// Clean up client cache when cluster is updated
-	if r.ClientManager != nil {
-		r.ClientManager.RemoveClient(cluster.Name)
-	}
-
 	mode := cluster.Spec.ConnectionMode
 	if mode == "" {
 		mode = clusterv1alpha1.ClusterConnectionModeHub
@@ -155,6 +150,7 @@ func (r *ClusterReconciler) reconcileEdge(ctx context.Context, cluster, original
 	}
 
 	// 3. Check Heartbeat
+	previousState := cluster.Status.State
 	if cluster.Status.LastKeepAliveTime != nil {
 		heartbeatLatency := time.Since(cluster.Status.LastKeepAliveTime.Time)
 		metrics.SetHeartbeatLatency(cluster.Name, heartbeatLatency)
@@ -179,6 +175,15 @@ func (r *ClusterReconciler) reconcileEdge(ctx context.Context, cluster, original
 					return ctrl.Result{}, err
 				}
 			}
+		}
+	}
+
+	// 4. When cluster transitions from Offline/Pending to Ready, remove stale client cache
+	// so that the next GetClient call creates a fresh connection through the new tunnel session
+	if cluster.Status.State == clusterv1alpha1.ClusterReady && previousState != clusterv1alpha1.ClusterReady {
+		if r.ClientManager != nil {
+			r.ClientManager.RemoveClient(cluster.Name)
+			ctrl.Log.Info("Removed stale client cache for cluster coming online", "cluster", cluster.Name, "previousState", previousState)
 		}
 	}
 
@@ -229,10 +234,8 @@ func (r *ClusterReconciler) handleEdgeCredentials(ctx context.Context, cluster, 
 		return err
 	}
 
-	// Update Cluster Status and Spec
-	cluster.Status.APIServerURL = apiServerURL
-	cluster.Status.State = clusterv1alpha1.ClusterReady
-	metrics.SetClusterConnectionState(cluster.Name, true)
+	// Update Cluster Spec (annotations, secretRef) and Status separately
+	// Spec and metadata changes via regular Patch
 	cluster.Spec.SecretRef = &corev1.LocalObjectReference{Name: secretName}
 	delete(cluster.Annotations, constants.AnnotationCredentialsCA)
 	delete(cluster.Annotations, constants.AnnotationCredentialsToken)
@@ -240,7 +243,16 @@ func (r *ClusterReconciler) handleEdgeCredentials(ctx context.Context, cluster, 
 	delete(cluster.Annotations, constants.AnnotationCredentialsCert)
 	delete(cluster.Annotations, constants.AnnotationCredentialsKey)
 
-	return r.Patch(ctx, cluster, client.MergeFrom(original))
+	if err := r.Patch(ctx, cluster, client.MergeFrom(original)); err != nil {
+		return err
+	}
+
+	// Status changes via status subresource Patch
+	cluster.Status.APIServerURL = apiServerURL
+	cluster.Status.State = clusterv1alpha1.ClusterReady
+	metrics.SetClusterConnectionState(cluster.Name, true)
+
+	return r.Status().Patch(ctx, cluster, client.MergeFrom(original))
 }
 
 func (r *ClusterReconciler) patchStatus(ctx context.Context, cluster, original *clusterv1alpha1.ManagedCluster) error {

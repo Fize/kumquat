@@ -145,6 +145,9 @@ func main() {
 			os.Exit(1)
 		}
 
+		// Set the local client so the agent can collect resource/node summaries
+		clusterAgent.LocalClient = mgr.GetClient()
+
 		go func() {
 			if err := clusterAgent.StartHeartbeat(ctx); err != nil {
 				setupLog.Error(err, "Heartbeat loop failed")
