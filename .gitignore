@@ -20,6 +20,7 @@ Thumbs.db
 *.test
 *.out
 vendor/
+engine/agent
 
 # Helm
 **/charts/*/charts/
