@@ -1,5 +1,5 @@
 # Portal Dockerfile
-FROM golang:1.25rc2-bullseye AS builder
+FROM golang:1.24-bullseye AS builder
 
 # Install build dependencies for SQLite (requires CGO)
 RUN apt-get update && apt-get install -y gcc libsqlite3-dev && rm -rf /var/lib/apt/lists/*

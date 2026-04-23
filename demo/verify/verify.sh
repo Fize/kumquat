@@ -26,10 +26,10 @@ check() {
 
     if eval "$cmd" 2>/dev/null; then
         echo -e "  ${GREEN}PASS${NC} ${desc}"
-        ((pass++))
+        pass=$((pass + 1))
     else
         echo -e "  ${RED}FAIL${NC} ${desc}"
-        ((fail++))
+        fail=$((fail + 1))
     fi
 }
 
@@ -39,10 +39,10 @@ check_warn() {
 
     if eval "$cmd" 2>/dev/null; then
         echo -e "  ${GREEN}PASS${NC} ${desc}"
-        ((pass++))
+        pass=$((pass + 1))
     else
         echo -e "  ${YELLOW}WARN${NC} ${desc} (may take time)"
-        ((warn++))
+        warn=$((warn + 1))
     fi
 }
 
@@ -123,16 +123,16 @@ echo ""
 # 6. Network Connectivity
 echo "--- Network Connectivity ---"
 hub_ip=$(docker inspect "${HUB_CLUSTER}-control-plane" \
-    --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null | head -1)
+    --format "{{(index .NetworkSettings.Networks \"kumquat-net\").IPAddress}}" 2>/dev/null)
 sub1_ip=$(docker inspect "${SUB_CLUSTERS[0]}-control-plane" \
-    --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null | head -1)
+    --format "{{(index .NetworkSettings.Networks \"kumquat-net\").IPAddress}}" 2>/dev/null)
 
 if [[ -n "$hub_ip" && -n "$sub1_ip" ]]; then
     check "Hub <-> Sub-1 network reachable" \
-        "docker exec ${HUB_CLUSTER}-control-plane ping -c 1 -W 2 ${sub1_ip}"
+        "docker exec ${HUB_CLUSTER}-control-plane curl -sk -o /dev/null -w '%{http_code}' https://${sub1_ip}:6443/healthz 2>/dev/null | grep -q '200'"
 else
     echo -e "  ${YELLOW}WARN${NC} Cannot determine cluster IPs for network test"
-    ((warn++))
+    warn=$((warn + 1))
 fi
 
 echo ""
