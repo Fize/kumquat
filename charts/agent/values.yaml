@@ -23,7 +23,7 @@ logEncoder: json
 
 manager:
   token: "07401b.f395accd246ae52d"
-  master: "https://kumquat01-control-plane:6443"
+  master: "https://kumquat-hub-control-plane:6443"
   region: ""
   area: ""
 
