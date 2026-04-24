@@ -2,6 +2,7 @@ package addon
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/fize/kumquat/engine/internal/addon"
@@ -48,14 +49,20 @@ func (r *AddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 	logger.Info("Reconciling addons for cluster", "cluster", cluster.Name)
 
+	// Track addon statuses to write back to Hub
+	statusUpdated := false
+	addonStatuses := cluster.Status.AddonStatus
+
 	// Iterate over all registered addons
 	for _, a := range r.getRegistry().List() {
+		addonName := a.Name()
+
 		// Check if enabled in cluster spec
 		enabled := false
 		var config map[string]string
 
 		for _, ca := range cluster.Spec.Addons {
-			if ca.Name == a.Name() {
+			if ca.Name == addonName {
 				enabled = ca.Enabled
 				config = ca.Config
 				break
@@ -63,14 +70,17 @@ func (r *AddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		}
 
 		if !enabled {
-			// TODO: Handle uninstall if needed
-			logger.V(1).Info("Addon not enabled, skipping", "addon", a.Name())
+			// Update status to Disabled
+			addonStatuses = updateAddonStatus(addonStatuses, addonName, "Disabled", "Addon is disabled")
+			statusUpdated = true
 			continue
 		}
 
-		controller, ok := r.Controllers[a.Name()]
+		controller, ok := r.Controllers[addonName]
 		if !ok || controller == nil {
-			logger.V(1).Info("No AgentController for addon, skipping", "addon", a.Name())
+			logger.V(1).Info("No AgentController for addon, skipping", "addon", addonName)
+			addonStatuses = updateAddonStatus(addonStatuses, addonName, "Pending", "Controller not registered")
+			statusUpdated = true
 			continue
 		}
 
@@ -80,16 +90,55 @@ func (r *AddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			Client:      r.LocalClient,
 		}
 
-		logger.Info("Calling AgentController.Reconcile", "addon", a.Name())
+		logger.Info("Calling AgentController.Reconcile", "addon", addonName)
 		if err := controller.Reconcile(ctx, addonConfig); err != nil {
-			logger.Error(err, "Failed to reconcile addon", "addon", a.Name())
-			// Continue with other addons even if one fails
+			if errors.Is(err, addon.ErrPrerequisitesNotMet) {
+				// Prerequisites not met (e.g., missing URL config) - mark as Pending
+				logger.V(1).Info("Addon prerequisites not met, will retry", "addon", addonName, "error", err)
+				addonStatuses = updateAddonStatus(addonStatuses, addonName, "Pending", err.Error())
+			} else {
+				// Real error - mark as Failed
+				logger.Error(err, "Failed to reconcile addon", "addon", addonName)
+				addonStatuses = updateAddonStatus(addonStatuses, addonName, "Failed", err.Error())
+			}
+			statusUpdated = true
 			continue
 		}
-		logger.Info("Successfully reconciled addon", "addon", a.Name())
+		logger.Info("Successfully reconciled addon", "addon", addonName)
+		addonStatuses = updateAddonStatus(addonStatuses, addonName, "Applied", "Addon successfully applied")
+		statusUpdated = true
+	}
+
+	// Write addon statuses back to Hub
+	if statusUpdated {
+		var latestCluster storagev1alpha1.ManagedCluster
+		if err := r.HubClient.Get(ctx, req.NamespacedName, &latestCluster); err != nil {
+			return ctrl.Result{}, err
+		}
+		latestCluster.Status.AddonStatus = addonStatuses
+		if err := r.HubClient.Status().Update(ctx, &latestCluster); err != nil {
+			logger.Error(err, "Failed to update addon status on Hub")
+			return ctrl.Result{}, err
+		}
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// updateAddonStatus updates or appends an addon status entry
+func updateAddonStatus(statuses []storagev1alpha1.AddonStatus, name, state, message string) []storagev1alpha1.AddonStatus {
+	for i := range statuses {
+		if statuses[i].Name == name {
+			statuses[i].State = state
+			statuses[i].Message = message
+			return statuses
+		}
+	}
+	return append(statuses, storagev1alpha1.AddonStatus{
+		Name:    name,
+		State:   state,
+		Message: message,
+	})
 }
 
 // SetupWithManager sets up the controller with the Manager.

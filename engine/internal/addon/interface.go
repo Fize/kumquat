@@ -2,11 +2,18 @@ package addon
 
 import (
 	"context"
+	"errors"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// ErrPrerequisitesNotMet indicates that the addon cannot proceed because
+// its prerequisites (e.g., required config values) are not yet available.
+// Controllers should return this error instead of silently returning nil
+// when they skip installation due to missing prerequisites.
+var ErrPrerequisitesNotMet = errors.New("addon prerequisites not met")
 
 // AddonConfig holds configuration for the addon
 type AddonConfig struct {

@@ -150,7 +150,7 @@ func TestManagerController_Reconcile_FirstInstall(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, updatedCluster.Spec.Addons[0].Config, ConfigVictoriaMetricsURL)
-	expectedURL := "http://victoria-metrics-victoria-metrics-single.victoriametrics.svc.cluster.local:8428"
+	expectedURL := "http://victoria-metrics-victoria-metrics-single-server.victoriametrics.svc.cluster.local:8428"
 	assert.Equal(t, expectedURL, updatedCluster.Spec.Addons[0].Config[ConfigVictoriaMetricsURL])
 }
 
@@ -233,7 +233,7 @@ func TestAgentController_Reconcile_FirstInstall(t *testing.T) {
 	controller := &AgentController{}
 	controller.SetHelmClient(mockHelm)
 
-	vmURL := "http://victoria-metrics-victoria-metrics-single.victoriametrics.svc.cluster.local:8428"
+	vmURL := "http://victoria-metrics-victoria-metrics-single-server.victoriametrics.svc.cluster.local:8428"
 	config := addon.AddonConfig{
 		ClusterName: "test-cluster",
 		Config: map[string]string{
@@ -251,7 +251,10 @@ func TestAgentController_Reconcile_FirstInstall(t *testing.T) {
 
 	// Verify remoteWrite URL was configured correctly
 	values := mockHelm.installOrUpgradeCalls[0].values
-	remoteWrite, ok := values["remoteWrite"].(map[string]interface{})
+	remoteWriteList, ok := values["remoteWrite"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, remoteWriteList, 1)
+	remoteWrite, ok := remoteWriteList[0].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, vmURL+"/api/v1/write", remoteWrite["url"])
 }
@@ -276,7 +279,8 @@ func TestAgentController_Reconcile_NoURL(t *testing.T) {
 	}
 
 	err := controller.Reconcile(context.Background(), config)
-	require.NoError(t, err)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, addon.ErrPrerequisitesNotMet)
 
 	// Should not call Helm install
 	assert.Len(t, mockHelm.installOrUpgradeCalls, 0)
@@ -371,7 +375,7 @@ func TestAgentController_Reconcile_WithStorage(t *testing.T) {
 	controller := &AgentController{}
 	controller.SetHelmClient(mockHelm)
 
-	vmURL := "http://victoria-metrics-victoria-metrics-single.victoriametrics.svc.cluster.local:8428"
+	vmURL := "http://victoria-metrics-victoria-metrics-single-server.victoriametrics.svc.cluster.local:8428"
 	config := addon.AddonConfig{
 		ClusterName: "test-cluster",
 		Config: map[string]string{
@@ -421,7 +425,7 @@ func TestResolveChartURL(t *testing.T) {
 				ChartName:    "my-chart",
 				ChartVersion: "1.0.0",
 			},
-			want:    "https://charts.example.com/my-chart-1.0.0.tgz",
+			want:    "https://charts.example.com/my-chart-1.0.0/my-chart-1.0.0.tgz",
 			wantErr: false,
 		},
 		{
@@ -431,7 +435,7 @@ func TestResolveChartURL(t *testing.T) {
 				ChartName:    "my-chart",
 				ChartVersion: "1.0.0",
 			},
-			want:    "https://charts.example.com/my-chart-1.0.0.tgz",
+			want:    "https://charts.example.com/my-chart-1.0.0/my-chart-1.0.0.tgz",
 			wantErr: false,
 		},
 		{
@@ -440,7 +444,7 @@ func TestResolveChartURL(t *testing.T) {
 				RepoURL:   "https://charts.example.com",
 				ChartName: "my-chart",
 			},
-			want:    "https://charts.example.com/my-chart-*.tgz",
+			want:    "https://charts.example.com/my-chart-*/my-chart-*.tgz",
 			wantErr: false,
 		},
 		{

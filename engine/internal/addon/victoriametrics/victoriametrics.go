@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/fize/kumquat/engine/internal/addon"
@@ -25,17 +26,17 @@ const (
 	VictoriaMetricsNamespace = "victoriametrics"
 	VmAgentNamespace         = "vm-agent"
 
-	// Default chart configuration
-	defaultVMChartRepoURL = "https://victoriametrics.github.io/helm-charts/"
+	// Default chart configuration - use GitHub Releases for direct tgz download
+	defaultVMChartRepoURL = "https://github.com/VictoriaMetrics/helm-charts/releases/download"
 	defaultVMChartName    = "victoria-metrics-single"
-	defaultVMChartVersion = "0.33.0"
+	defaultVMChartVersion = "0.35.0"
 
-	defaultVmAgentChartRepoURL = "https://victoriametrics.github.io/helm-charts/"
+	defaultVmAgentChartRepoURL = "https://github.com/VictoriaMetrics/helm-charts/releases/download"
 	defaultVmAgentChartName    = "victoria-metrics-agent"
-	defaultVmAgentChartVersion = "0.34.0"
+	defaultVmAgentChartVersion = "0.36.0"
 
 	// Service names
-	VictoriaMetricsServiceName = "victoria-metrics-victoria-metrics-single"
+	VictoriaMetricsServiceName = "victoria-metrics-victoria-metrics-single-server"
 
 	// Environment variables for custom charts
 	EnvVMChartURL      = "CHART_VICTORIAMETRICS_URL"
@@ -338,8 +339,8 @@ func (c *AgentController) Reconcile(ctx context.Context, config addon.AddonConfi
 	vmURL := config.Config[ConfigVictoriaMetricsURL]
 
 	if vmURL == "" {
-		// Not ready yet
-		return nil
+		// Prerequisites not met: victoriametricsURL not available yet
+		return fmt.Errorf("%w: victoriametricsURL not configured", addon.ErrPrerequisitesNotMet)
 	}
 
 	// Check if vmagent chart config has changed
@@ -365,9 +366,12 @@ func (c *AgentController) Reconcile(ctx context.Context, config addon.AddonConfi
 	}
 
 	// Configure vmagent to scrape local cluster and send to VictoriaMetrics
+	// remoteWrite must be a list of objects for the Helm chart
 	values := map[string]interface{}{
-		"remoteWrite": map[string]interface{}{
-			"url": vmURL + "/api/v1/write",
+		"remoteWrite": []interface{}{
+			map[string]interface{}{
+				"url": vmURL + "/api/v1/write",
+			},
 		},
 		"service": map[string]interface{}{
 			"type": "ClusterIP",
@@ -470,12 +474,11 @@ func resolveChartURL(cfg chartURLConfig) (string, error) {
 		cfg.ChartVersion = "*"
 	}
 
-	// Construct chart URL: <repo-url>/<chart-name>-<version>.tgz
-	repoURL := cfg.RepoURL
-	if repoURL[len(repoURL)-1] != '/' {
-		repoURL += "/"
-	}
-	return fmt.Sprintf("%s%s-%s.tgz", repoURL, cfg.ChartName, cfg.ChartVersion), nil
+	// Construct chart URL using GitHub Releases format:
+	// <repo-url>/<chart-name>-<version>/<chart-name>-<version>.tgz
+	// Example: https://github.com/VictoriaMetrics/helm-charts/releases/download/victoria-metrics-single-0.35.0/victoria-metrics-single-0.35.0.tgz
+	releaseTag := fmt.Sprintf("%s-%s", cfg.ChartName, cfg.ChartVersion)
+	return fmt.Sprintf("%s/%s/%s-%s.tgz", strings.TrimRight(cfg.RepoURL, "/"), releaseTag, cfg.ChartName, cfg.ChartVersion), nil
 }
 
 func loadValuesFromRef(ctx context.Context, c client.Client, ref valuesRef) (map[string]interface{}, error) {

@@ -108,9 +108,10 @@ func TestAgentController_Reconcile_NotReady(t *testing.T) {
 		Config:      map[string]string{},
 	}
 
-	// Should return nil when not ready (no broker URL/token)
+	// Should return ErrPrerequisitesNotMet when not ready (no broker URL/token)
 	err := ac.Reconcile(context.Background(), config)
-	assert.NoError(t, err)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, addon.ErrPrerequisitesNotMet)
 }
 
 func TestAgentController_Reconcile_PartialConfig(t *testing.T) {
@@ -124,7 +125,8 @@ func TestAgentController_Reconcile_PartialConfig(t *testing.T) {
 	}
 
 	err := ac.Reconcile(context.Background(), config)
-	assert.NoError(t, err)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, addon.ErrPrerequisitesNotMet)
 }
 
 func TestManagerController_Reconcile_NeedUpdate(t *testing.T) {

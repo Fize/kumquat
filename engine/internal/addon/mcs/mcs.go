@@ -334,8 +334,8 @@ func (c *AgentController) Reconcile(ctx context.Context, config addon.AddonConfi
 	brokerNS := config.Config["brokerNamespace"]
 
 	if brokerURL == "" || brokerToken == "" {
-		// Not ready yet
-		return nil
+		// Prerequisites not met: broker info not available yet
+		return fmt.Errorf("%w: brokerURL or brokerToken not configured", addon.ErrPrerequisitesNotMet)
 	}
 
 	// Check if submariner chart config has changed (requires upgrade)
