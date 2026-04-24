@@ -107,15 +107,15 @@ check "ManagedCluster ${HUB_CLUSTER} registered" \
 
 echo ""
 
-# 5. Addon Status
+# 5. Addon Status (check .status.addonStatus instead of .spec.addons)
 echo "--- Addon Status ---"
 for sub in "${SUB_CLUSTERS[@]}"; do
     check_warn "mcs-lighthouse addon on ${sub}" \
-        "kubectl --context ${hub_ctx} get managedcluster ${sub} -o jsonpath='{.spec.addons[?(@.name==\"mcs-lighthouse\")].enabled}' 2>/dev/null | grep -q true"
+        "kubectl --context ${hub_ctx} get managedcluster ${sub} -o jsonpath='{.status.addonStatus[?(@.name==\"mcs-lighthouse\")].state}' 2>/dev/null | grep -q Applied"
     check_warn "kruise-rollout addon on ${sub}" \
-        "kubectl --context ${hub_ctx} get managedcluster ${sub} -o jsonpath='{.spec.addons[?(@.name==\"kruise-rollout\")].enabled}' 2>/dev/null | grep -q true"
+        "kubectl --context ${hub_ctx} get managedcluster ${sub} -o jsonpath='{.status.addonStatus[?(@.name==\"kruise-rollout\")].state}' 2>/dev/null | grep -q Applied"
     check_warn "victoriametrics addon on ${sub}" \
-        "kubectl --context ${hub_ctx} get managedcluster ${sub} -o jsonpath='{.spec.addons[?(@.name==\"victoriametrics\")].enabled}' 2>/dev/null | grep -q true"
+        "kubectl --context ${hub_ctx} get managedcluster ${sub} -o jsonpath='{.status.addonStatus[?(@.name==\"victoriametrics\")].state}' 2>/dev/null | grep -q Applied"
 done
 
 echo ""
