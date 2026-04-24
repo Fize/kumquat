@@ -152,15 +152,15 @@ func TestClusterReconciler_EdgeMode_Credentials(t *testing.T) {
 	assert.Empty(t, updatedCluster.Annotations[constants.AnnotationCredentialsToken])
 }
 
-func TestClusterReconciler_HubMode_Rejected(t *testing.T) {
+func TestClusterReconciler_HubMode_AutoAccept(t *testing.T) {
 	ctx := context.Background()
 	scheme := newClusterScheme(t)
 
 	cluster := &clusterv1alpha1.ManagedCluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "rejected-cluster"},
+		ObjectMeta: metav1.ObjectMeta{Name: "hub-no-secret"},
 		Spec: clusterv1alpha1.ManagedClusterSpec{
 			ConnectionMode: clusterv1alpha1.ClusterConnectionModeHub,
-			// Missing SecretRef
+			// No SecretRef - Hub clusters should be auto-accepted
 		},
 	}
 
@@ -172,7 +172,8 @@ func TestClusterReconciler_HubMode_Rejected(t *testing.T) {
 
 	var got clusterv1alpha1.ManagedCluster
 	cl.Get(ctx, types.NamespacedName{Name: cluster.Name}, &got)
-	assert.Equal(t, clusterv1alpha1.ClusterRejected, got.Status.State)
+	assert.Equal(t, clusterv1alpha1.ClusterReady, got.Status.State)
+	assert.NotEmpty(t, got.Status.ID, "Hub cluster without SecretRef should be auto-accepted with an ID")
 }
 
 func TestClusterReconciler_DuplicateSecret(t *testing.T) {

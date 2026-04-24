@@ -642,8 +642,8 @@ spec:
 EOF
     done
 
-    # Also enable kruise-rollout on Hub (for demo when Hub runs workloads too)
-    log_step "Enabling kruise-rollout on Hub cluster..."
+    # Also enable addons on Hub (for demo when Hub runs workloads too)
+    log_step "Enabling addons on Hub cluster..."
     kubectl --context "$ctx" apply -f - <<EOF
 apiVersion: storage.kumquat.io/v1alpha1
 kind: ManagedCluster
@@ -652,6 +652,10 @@ metadata:
 spec:
   connectionMode: Hub
   addons:
+    - name: mcs-lighthouse
+      enabled: true
+      config:
+        submarinerChartVersion: "0.23.0-m0"
     - name: kruise-rollout
       enabled: true
       config:

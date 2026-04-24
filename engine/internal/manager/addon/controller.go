@@ -41,11 +41,6 @@ func (r *AddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Only reconcile addons for Hub clusters. Edge clusters are handled by their agents.
-	if cluster.Spec.ConnectionMode != "Hub" {
-		return ctrl.Result{}, nil
-	}
-
 	ctx, span := observability.Tracer().Start(ctx, "AddonReconcile",
 		trace.WithAttributes(
 			attribute.String("cluster.name", cluster.Name),
@@ -103,8 +98,11 @@ func (r *AddonReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			continue
 		}
 
-		// Update status as Applied
-		r.updateAddonStatus(&cluster, addonName, "Applied", "Addon successfully applied")
+		// Only update addon status for Hub clusters.
+		// Edge clusters' addon status is managed by their agents.
+		if cluster.Spec.ConnectionMode == "Hub" {
+			r.updateAddonStatus(&cluster, addonName, "Applied", "Addon successfully applied")
+		}
 		managermetrics.RecordAddonReconcile(addonName, "success", time.Since(addonStart))
 		statusUpdated = true
 	}

@@ -87,10 +87,18 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 func (r *ClusterReconciler) reconcileHub(ctx context.Context, cluster, original *clusterv1alpha1.ManagedCluster) (ctrl.Result, error) {
-	if cluster.Spec.SecretRef == nil || cluster.Spec.SecretRef.Name == "" {
-		if cluster.Status.State != clusterv1alpha1.ClusterRejected {
-			cluster.Status.State = clusterv1alpha1.ClusterRejected
-			metrics.SetClusterConnectionState(cluster.Name, false)
+	// Hub-mode clusters without SecretRef can use in-cluster config to access their own API,
+	// so they should be auto-accepted as Ready rather than marked Rejected.
+	noSecretRef := cluster.Spec.SecretRef == nil || cluster.Spec.SecretRef.Name == ""
+
+	if noSecretRef {
+		// Auto-accept Hub clusters: they can be managed directly via in-cluster access
+		if cluster.Status.State != clusterv1alpha1.ClusterReady {
+			if cluster.Status.ID == "" {
+				cluster.Status.ID = uuid.New().String()
+			}
+			cluster.Status.State = clusterv1alpha1.ClusterReady
+			metrics.SetClusterConnectionState(cluster.Name, true)
 			return ctrl.Result{}, r.patchStatus(ctx, cluster, original)
 		}
 		return ctrl.Result{}, nil

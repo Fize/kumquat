@@ -192,6 +192,7 @@ func TestAddonReconciler_Reconcile_WithMockRegistry(t *testing.T) {
 			Name: "test-cluster",
 		},
 		Spec: storagev1alpha1.ManagedClusterSpec{
+			ConnectionMode: "Hub", // Manager controller only updates status for Hub clusters
 			Addons: []storagev1alpha1.ClusterAddon{
 				{
 					Name:    "test-addon",
@@ -234,7 +235,7 @@ func TestAddonReconciler_Reconcile_WithMockRegistry(t *testing.T) {
 	assert.Equal(t, "test-cluster", mockCtrl.reconcileCalls[0].ClusterName)
 	assert.Equal(t, "value", mockCtrl.reconcileCalls[0].Config["key"])
 
-	// Verify addon status was updated
+	// Verify addon status was updated (only for Hub clusters)
 	var updatedCluster storagev1alpha1.ManagedCluster
 	err = c.Get(context.Background(), types.NamespacedName{Name: cluster.Name}, &updatedCluster)
 	require.NoError(t, err)

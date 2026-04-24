@@ -16,6 +16,7 @@ import (
 
 	_ "github.com/fize/kumquat/engine/internal/addon/kruiserollout"
 	_ "github.com/fize/kumquat/engine/internal/addon/mcs"
+	_ "github.com/fize/kumquat/engine/internal/addon/victoriametrics"
 	addoncontroller "github.com/fize/kumquat/engine/internal/manager/addon"
 	"github.com/fize/kumquat/engine/internal/manager/apiserver"
 	"github.com/fize/kumquat/engine/internal/manager/apiserver/handler"

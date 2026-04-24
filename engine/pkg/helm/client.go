@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"helm.sh/helm/v3/pkg/action"
@@ -119,14 +120,30 @@ func (c *Client) InstallOrUpgrade(releaseName string, chartPath string, values m
 		client.Namespace = c.ns
 		client.ReuseValues = false
 		client.Wait = true
-		client.Timeout = 5 * time.Minute
+		client.Timeout = 10 * time.Minute
 
 		ch, err := loader.Load(resolvedChartPath)
 		if err != nil {
 			return nil, err
 		}
 
-		return client.Run(releaseName, ch, values)
+		rel, err := client.Run(releaseName, ch, values)
+		if err != nil && strings.Contains(err.Error(), "another operation (install/upgrade/rollback) is in progress") {
+			// Release is in pending state; uninstall and retry
+			if uninstallErr := c.uninstallPendingRelease(releaseName); uninstallErr != nil {
+				return nil, uninstallErr
+			}
+			// Retry as fresh install
+			instClient := action.NewInstall(c.cfg)
+			instClient.ReleaseName = releaseName
+			instClient.Namespace = c.ns
+			instClient.CreateNamespace = true
+			instClient.Wait = true
+			instClient.Timeout = 10 * time.Minute
+			ch2, _ := loader.Load(resolvedChartPath)
+			return instClient.Run(ch2, values)
+		}
+		return rel, err
 	}
 
 	// Install
@@ -135,14 +152,43 @@ func (c *Client) InstallOrUpgrade(releaseName string, chartPath string, values m
 	client.Namespace = c.ns
 	client.CreateNamespace = true
 	client.Wait = true
-	client.Timeout = 5 * time.Minute
+	client.Timeout = 10 * time.Minute
 
 	ch, err := loader.Load(resolvedChartPath)
 	if err != nil {
 		return nil, err
 	}
 
-	return client.Run(ch, values)
+	rel, err := client.Run(ch, values)
+	if err != nil && strings.Contains(err.Error(), "another operation (install/upgrade/rollback) is in progress") {
+		// Release is in pending state; uninstall and retry
+		if uninstallErr := c.uninstallPendingRelease(releaseName); uninstallErr != nil {
+			return nil, uninstallErr
+		}
+		// Retry install
+		client2 := action.NewInstall(c.cfg)
+		client2.ReleaseName = releaseName
+		client2.Namespace = c.ns
+		client2.CreateNamespace = true
+		client2.Wait = true
+		client2.Timeout = 10 * time.Minute
+		ch2, _ := loader.Load(resolvedChartPath)
+		return client2.Run(ch2, values)
+	}
+	return rel, err
+}
+
+//uninstallPendingRelease uninstalls a release that is in pending state.
+// Returns nil if the release was successfully uninstalled, or if it was not found.
+func (c *Client) uninstallPendingRelease(releaseName string) error {
+	uninstallClient := action.NewUninstall(c.cfg)
+	uninstallClient.Timeout = 2 * time.Minute
+	_, uninstallErr := uninstallClient.Run(releaseName)
+	if uninstallErr != nil && !strings.Contains(uninstallErr.Error(), "not found") {
+		return fmt.Errorf("failed to uninstall pending release %s: %w", releaseName, uninstallErr)
+	}
+	time.Sleep(2 * time.Second)
+	return nil
 }
 
 func (c *Client) resolveChartPath(chartPath string) (string, error) {
