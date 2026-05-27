@@ -48,8 +48,15 @@ TUNNEL_NODEPORT=30443
 PORTAL_NODEPORT=30080
 VM_NODEPORT=30842
 
-# Bootstrap Token (must match manager chart default)
-BOOTSTRAP_TOKEN="07401b.f395accd246ae52d"
+# Bootstrap Token — REQUIRED. Set via environment variable:
+#   export KUMQUAT_BOOTSTRAP_TOKEN="<id>.<secret>"
+# You can obtain this from your Kumquat administrator or generate it.
+BOOTSTRAP_TOKEN="${KUMQUAT_BOOTSTRAP_TOKEN:-}"
+if [[ -z "$BOOTSTRAP_TOKEN" ]]; then
+    log_error "KUMQUAT_BOOTSTRAP_TOKEN environment variable is not set."
+    log_error "Please set it before running: export KUMQUAT_BOOTSTRAP_TOKEN='<id>.<secret>'"
+    exit 1
+fi
 
 # Colors
 RED='\033[0;31m'

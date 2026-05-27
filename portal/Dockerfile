@@ -32,9 +32,15 @@ RUN GOTOOLCHAIN=auto CGO_ENABLED=1 GOOS=linux go build -a -o portal cmd/server/m
 FROM debian:bullseye-slim
 # Install SQLite runtime libraries
 RUN apt-get update && apt-get install -y ca-certificates libsqlite3-0 && rm -rf /var/lib/apt/lists/*
+# Create non-root user and group for running the application
+RUN addgroup --system --gid 65532 nonroot && adduser --system --uid 65532 --gid 65532 nonroot
 WORKDIR /app
 COPY --from=builder /workspace/portal .
 COPY --from=builder /workspace/config/ ./config/
+# Ensure /data volume is writable by the non-root user
+RUN mkdir -p /data && chown 65532:65532 /data
+# Run as non-root user
+USER 65532:65532
 
 EXPOSE 8080
 
