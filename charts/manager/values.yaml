@@ -34,9 +34,11 @@ insecureSkipTLSVerify: true
 # caBundle: ""
 
 bootstrap:
-  id: 07401b
-  secret: f395accd246ae52d
-  expiration: 2030-09-27T07:26:11Z
+  # REQUIRED: set via --set or external values file. Example:
+  #   --set bootstrap.id=<your-id> --set bootstrap.secret=<your-secret> --set bootstrap.expiration=<YYYY-MM-DDTHH:MM:SSZ>
+  # id: ""
+  # secret: ""
+  # expiration: ""
 
 
 imagePullSecrets: []
@@ -54,16 +56,16 @@ serviceAccount:
 
 podAnnotations: {}
 
-podSecurityContext: {}
-  # fsGroup: 2000
+podSecurityContext:
+  fsGroup: 65532
 
-securityContext: {}
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
 
 resources:
   # We usually recommend not to specify default resources and to leave this as a conscious

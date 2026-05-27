@@ -207,9 +207,19 @@ func (r *ClusterReconciler) handleEdgeCredentials(ctx context.Context, cluster, 
 
 	ctrl.Log.Info("Handling edge credentials", "cluster", cluster.Name, "apiServerURL", apiServerURL)
 
-	caData, _ := base64.StdEncoding.DecodeString(caDataB64)
-	certData, _ := base64.StdEncoding.DecodeString(certDataB64)
-	keyData, _ := base64.StdEncoding.DecodeString(keyDataB64)
+	caData, err := base64.StdEncoding.DecodeString(caDataB64)
+	if err != nil {
+		ctrl.Log.Error(err, "failed to decode CA certificate data", "cluster", cluster.Name)
+		return err
+	}
+	certData, err := base64.StdEncoding.DecodeString(certDataB64)
+	if err != nil {
+		ctrl.Log.Info("failed to decode cert data, continuing without cert", "cluster", cluster.Name, "err", err)
+	}
+	keyData, err := base64.StdEncoding.DecodeString(keyDataB64)
+	if err != nil {
+		ctrl.Log.Info("failed to decode key data, continuing without key", "cluster", cluster.Name, "err", err)
+	}
 
 	secretName := fmt.Sprintf("cluster-creds-%s", cluster.Name)
 	secretNamespace := r.Namespace
@@ -224,7 +234,7 @@ func (r *ClusterReconciler) handleEdgeCredentials(ctx context.Context, cluster, 
 		},
 	}
 
-	_, err := ctrl.CreateOrUpdate(ctx, r.Client, secret, func() error {
+	_, err = ctrl.CreateOrUpdate(ctx, r.Client, secret, func() error {
 		if secret.Data == nil {
 			secret.Data = make(map[string][]byte)
 		}

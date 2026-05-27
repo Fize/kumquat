@@ -22,7 +22,9 @@ logLevel: 5
 logEncoder: json
 
 manager:
-  token: "07401b.f395accd246ae52d"
+  # REQUIRED: set via --set or external values file. Example:
+  #   --set manager.token=<your-bootstrap-token>
+  # token: ""
   master: "https://kumquat-hub-control-plane:6443"
   region: ""
   area: ""
@@ -38,16 +40,16 @@ serviceAccount:
 
 podAnnotations: {}
 
-podSecurityContext: {}
-  # fsGroup: 2000
+podSecurityContext:
+  fsGroup: 65532
 
-securityContext: {}
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
 
 resources:
   # We usually recommend not to specify default resources and to leave this as a conscious

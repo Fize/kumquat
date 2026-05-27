@@ -20,6 +20,7 @@ package main
 // @description Type "Bearer" followed by a space and JWT token.
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
 	"strconv"
@@ -52,22 +53,34 @@ func main() {
 		log.Fatal("failed to load config", "err", err)
 	}
 
+	if err := run(cfg); err != nil {
+		log.Fatal("server error", "err", err)
+	}
+}
+
+func run(cfg *PortalConfig) error {
 	log.Info("starting portal server")
 
 	server, err := ginserver.NewServer(&cfg.BaseConfig)
 	if err != nil {
-		log.Fatal("failed to create server", "err", err)
+		return fmt.Errorf("failed to create server: %w", err)
 	}
 	log.Info("ginserver initialized", "metrics", cfg.Server.Metrics.Enabled, "trace", cfg.Server.Trace.Enabled)
 
 	db, err := initDB(cfg, log.Default())
 	if err != nil {
-		log.Fatal("failed to connect database", "err", err)
+		return fmt.Errorf("failed to connect database: %w", err)
 	}
+	defer func() {
+		sqlDB, err := db.DB()
+		if err == nil {
+			sqlDB.Close()
+		}
+	}()
 	log.Info("database connected", "type", cfg.SQL.Type, "host", cfg.SQL.Host)
 
 	if err := migration.Migrate(db); err != nil {
-		log.Fatal("failed to migrate database", "err", err)
+		return fmt.Errorf("failed to migrate database: %w", err)
 	}
 	log.Info("database migrated")
 
@@ -91,7 +104,7 @@ func main() {
 	// Initialize Service
 	roleService := service.NewRoleService(roleRepo, db)
 	if err := roleService.InitRoles(); err != nil {
-		log.Fatal("failed to initialize roles", "err", err)
+		return fmt.Errorf("failed to initialize roles: %w", err)
 	}
 	log.Info("roles and permissions initialized")
 
@@ -100,14 +113,13 @@ func main() {
 	moduleService := service.NewModuleService(moduleRepo, db)
 	projectService := service.NewProjectService(projectRepo, db)
 
-	// Initialize K8s Client (for operating Engine CRD)
+	// Initialize K8s Client
 	k8sClient, err := k8sclient.NewK8sClient(&k8sclient.Config{
 		KubeconfigPath: cfg.Kubernetes.KubeconfigPath,
 		MasterURL:      cfg.Kubernetes.MasterURL,
 	})
 	if err != nil {
 		log.Warn("failed to initialize k8s client, k8s resources will not be available", "err", err)
-		// Do not interrupt startup, only K8s features will be unavailable
 	} else {
 		log.Info("k8s client initialized")
 	}
@@ -125,14 +137,26 @@ func main() {
 	// Initialize Middleware
 	authMiddleware := middleware.NewAuthMiddleware(jwtService)
 
-	server.Engine.Use(middleware.CORS())
+	server.Engine.Use(middleware.Recovery())
+	server.Engine.Use(middleware.CORS(cfg.Security.AllowedOrigins))
+
+	// Rate limiting: defaults to 100 req/s with burst of 200 if not configured
+	rateLimit := cfg.Security.RateLimit
+	if rateLimit <= 0 {
+		rateLimit = 100
+	}
+	rateLimitBurst := cfg.Security.RateLimitBurst
+	if rateLimitBurst <= 0 {
+		rateLimitBurst = 200
+	}
+	server.Engine.Use(middleware.RateLimit(rateLimit, rateLimitBurst))
 
 	registerRoutes(server.Engine, db, authService, userService, moduleService, projectService, roleService, authMiddleware,
 		clusterService, applicationService, workspaceService)
 
 	ctx, cancel, err := server.RunWithContext()
 	if err != nil {
-		log.Fatal("failed to run server", "err", err)
+		return fmt.Errorf("failed to run server: %w", err)
 	}
 	defer cancel()
 
@@ -147,6 +171,9 @@ func main() {
 	case <-ctx.Done():
 		log.Info("server context done")
 	}
+
+	log.Info("server shutdown complete")
+	return nil
 }
 
 type PortalConfig struct {
@@ -157,7 +184,10 @@ type PortalConfig struct {
 		ResetExpireDuration string `mapstructure:"reset_expire_duration"`
 	} `mapstructure:"jwt"`
 	Security struct {
-		AllowedEmailDomains []string `mapstructure:"allowed_email_domains"`
+		AllowedEmailDomains []string  `mapstructure:"allowed_email_domains"`
+		AllowedOrigins      []string  `mapstructure:"allowed_origins"`
+		RateLimit           float64   `mapstructure:"rate_limit"`
+		RateLimitBurst      int       `mapstructure:"rate_limit_burst"`
 	} `mapstructure:"security"`
 	Kubernetes struct {
 		KubeconfigPath string `mapstructure:"kubeconfig_path"`
@@ -171,7 +201,8 @@ func loadConfig() (*PortalConfig, error) {
 	}
 
 	cfg.Server.BindAddr = ":8080"
-	cfg.JWT.Secret = "change-this-secret-in-production"
+	// JWT Secret: REQUIRED — must be set via config file (config.yaml) or environment variable.
+	// If not set, the server will exit with an error.
 	cfg.JWT.ExpireDuration = "24h"
 	cfg.JWT.ResetExpireDuration = "10m"
 
@@ -181,6 +212,10 @@ func loadConfig() (*PortalConfig, error) {
 
 	if err := cfg.ParseCustomConfig(cfg); err != nil {
 		return nil, err
+	}
+
+	if cfg.JWT.Secret == "" {
+		log.Fatal("JWT secret is not configured. Set it in config.yaml or via PORTAL_JWT_SECRET environment variable")
 	}
 
 	return cfg, nil

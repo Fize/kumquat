@@ -69,7 +69,7 @@ func main() {
 	flag.BoolVar(&otlpInsecure, "otlp-insecure", true, "Use insecure connection for OTLP gRPC.")
 	flag.Float64Var(&traceSampleRate, "trace-sample-rate", 1.0, "Trace sampling rate (0.0-1.0). Only effective when --otlp-endpoint is set.")
 	opts := zap.Options{
-		Development: true,
+		Development: false,
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
