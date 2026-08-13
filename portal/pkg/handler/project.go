@@ -45,11 +45,11 @@ func (c *ProjectController) Version() string { return "v1" }
 func (c *ProjectController) Middlewares() []ginserver.MiddlewaresObject {
 	return []ginserver.MiddlewaresObject{
 		{
-			Methods:     []string{"GET"},
+			Methods:     []string{"get", "list"},
 			Middlewares: []gin.HandlerFunc{c.authMiddleware.Auth(), middleware.RequirePermission(c.rs, "project", "read")},
 		},
 		{
-			Methods:     []string{"POST", "PUT", "DELETE"},
+			Methods:     []string{"create", "update", "delete"},
 			Middlewares: []gin.HandlerFunc{c.authMiddleware.Auth(), middleware.RequireRole("admin")},
 		},
 	}

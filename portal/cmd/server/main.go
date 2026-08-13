@@ -272,26 +272,35 @@ func registerRoutes(engine *gin.Engine, db *gorm.DB, authService *service.AuthSe
 	projectRestful.Install(engine, handler.NewProjectController(projectService, roleService, authMiddleware))
 
 	// Register K8s related routes (if K8s client initialized successfully)
+	var clusterController *handler.ClusterController
+	var applicationController *handler.ApplicationController
+	var workspaceController *handler.WorkspaceController
 	if clusterService != nil {
+		clusterController = handler.NewClusterController(clusterService, roleService, authMiddleware)
 		clusterRestful := &ginserver.RestfulAPI{PostParameter: ":id"}
-		clusterRestful.Install(engine, handler.NewClusterController(clusterService, roleService, authMiddleware))
+		clusterRestful.Install(engine, clusterController)
 		log.Info("cluster routes registered")
 	}
 	if applicationService != nil {
-		appRestful := &ginserver.RestfulAPI{PostParameter: ":id"}
-		appRestful.Install(engine, handler.NewApplicationController(applicationService, roleService, authMiddleware))
-		log.Info("application routes registered")
+		applicationController = handler.NewApplicationController(applicationService, roleService, authMiddleware)
+		// Application routes are registered manually in registerCustomRoutes:
+		// handlers use :namespace/:name params, which gin cannot register alongside
+		// RestfulAPI's /applications/:id wildcard (route conflict panic).
+		log.Info("application controller constructed")
 	}
 	if workspaceService != nil {
+		workspaceController = handler.NewWorkspaceController(workspaceService, roleService, authMiddleware)
 		wsRestful := &ginserver.RestfulAPI{PostParameter: ":id"}
-		wsRestful.Install(engine, handler.NewWorkspaceController(workspaceService, roleService, authMiddleware))
+		wsRestful.Install(engine, workspaceController)
 		log.Info("workspace routes registered")
 	}
 
-	registerCustomRoutes(api, moduleService, projectService, roleService, authMiddleware)
+	registerCustomRoutes(api, moduleService, projectService, roleService, authMiddleware,
+		clusterController, applicationController, workspaceController)
 }
 
-func registerCustomRoutes(api *gin.RouterGroup, moduleService *service.ModuleService, projectService *service.ProjectService, roleService *service.RoleService, authMiddleware *middleware.AuthMiddleware) {
+func registerCustomRoutes(api *gin.RouterGroup, moduleService *service.ModuleService, projectService *service.ProjectService, roleService *service.RoleService, authMiddleware *middleware.AuthMiddleware,
+	clusterController *handler.ClusterController, applicationController *handler.ApplicationController, workspaceController *handler.WorkspaceController) {
 	api.GET("/modules/:id/children", authMiddleware.Auth(),
 		middleware.RequirePermission(roleService, "module", "read"),
 		func(c *gin.Context) {
@@ -347,4 +356,41 @@ func registerCustomRoutes(api *gin.RouterGroup, moduleService *service.ModuleSer
 			}
 			utils.Success(c, gin.H{"permissions": perms})
 		})
+
+	// Applications: registered manually because handlers use :namespace/:name,
+	// which cannot coexist with RestfulAPI's /applications/:id wildcard.
+	if applicationController != nil {
+		appRead := []gin.HandlerFunc{authMiddleware.Auth(), middleware.RequirePermission(roleService, "application", "read")}
+		appWrite := []gin.HandlerFunc{authMiddleware.Auth(), middleware.RequirePermission(roleService, "application", "write")}
+
+		api.GET("/applications", append(appRead, mustHandler(applicationController.List))...)
+		api.POST("/applications", append(appWrite, mustHandler(applicationController.Create))...)
+		api.GET("/applications/:namespace/:name", append(appRead, mustHandler(applicationController.Get))...)
+		api.PUT("/applications/:namespace/:name", append(appWrite, mustHandler(applicationController.Update))...)
+		api.PATCH("/applications/:namespace/:name", append(appWrite, mustHandler(applicationController.Patch))...)
+		api.DELETE("/applications/:namespace/:name", append(appWrite, mustHandler(applicationController.Delete))...)
+		api.PATCH("/applications/:namespace/:name/suspend", append(appWrite, mustHandler(applicationController.Suspend))...)
+		api.POST("/applications/:namespace/:name/scale", append(appWrite, mustHandler(applicationController.Scale))...)
+	}
+
+	if clusterController != nil {
+		clusterAdmin := []gin.HandlerFunc{authMiddleware.Auth(), middleware.RequireRole("admin")}
+		api.GET("/clusters/:id/addons", append(clusterAdmin, mustHandler(clusterController.GetAddons))...)
+		api.PUT("/clusters/:id/addons", append(clusterAdmin, mustHandler(clusterController.UpdateAddons))...)
+	}
+
+	if workspaceController != nil {
+		wsRead := []gin.HandlerFunc{authMiddleware.Auth(), middleware.RequirePermission(roleService, "workspace", "read")}
+		api.GET("/workspaces/:id/clusters", append(wsRead, mustHandler(workspaceController.GetClusters))...)
+	}
+}
+
+// mustHandler resolves a controller handler method; controller methods never
+// return errors, so failure here is a programming error.
+func mustHandler(fn func() (gin.HandlerFunc, error)) gin.HandlerFunc {
+	h, err := fn()
+	if err != nil {
+		panic(err)
+	}
+	return h
 }

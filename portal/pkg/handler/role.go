@@ -28,7 +28,7 @@ func (c *RoleController) Version() string { return "v1" }
 func (c *RoleController) Middlewares() []ginserver.MiddlewaresObject {
 	return []ginserver.MiddlewaresObject{
 		{
-			Methods:     []string{"GET"},
+			Methods:     []string{"get", "list"},
 			Middlewares: []gin.HandlerFunc{c.authMiddleware.Auth(), middleware.RequirePermission(c.svc, "role", "read")},
 		},
 	}

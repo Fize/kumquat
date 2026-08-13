@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	apperr "github.com/fize/kumquat/portal/pkg/errors"
 	clusterv1alpha1 "github.com/fize/kumquat/engine/pkg/apis/cluster/v1alpha1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -75,52 +74,6 @@ func (s *ClusterService) Get(ctx context.Context, name string) (*clusterv1alpha1
 		return nil, wrapK8sError(err, fmt.Sprintf("failed to get cluster %s", name))
 	}
 	return cluster, nil
-}
-
-// ApproveClusterRequest approve cluster request
-type ApproveClusterRequest struct {
-	Name string
-}
-
-// Approve approves cluster (Pending -> Ready)
-func (s *ClusterService) Approve(ctx context.Context, req *ApproveClusterRequest) error {
-	cluster := &clusterv1alpha1.Cluster{}
-	if err := s.k8sClient.Get(ctx, client.ObjectKey{Name: req.Name}, cluster); err != nil {
-		return wrapK8sError(err, fmt.Sprintf("failed to get cluster %s", req.Name))
-	}
-
-	if cluster.Status.State != clusterv1alpha1.ClusterPending {
-		return apperr.New(apperr.CodeBadRequest, fmt.Sprintf("cluster %s is not in Pending state, current: %s", req.Name, cluster.Status.State))
-	}
-
-	cluster.Status.State = clusterv1alpha1.ClusterReady
-	if err := s.k8sClient.Status().Update(ctx, cluster); err != nil {
-		return wrapK8sError(err, fmt.Sprintf("failed to approve cluster %s", req.Name))
-	}
-	return nil
-}
-
-// RejectClusterRequest reject cluster request
-type RejectClusterRequest struct {
-	Name string
-}
-
-// Reject rejects cluster
-func (s *ClusterService) Reject(ctx context.Context, req *RejectClusterRequest) error {
-	cluster := &clusterv1alpha1.Cluster{}
-	if err := s.k8sClient.Get(ctx, client.ObjectKey{Name: req.Name}, cluster); err != nil {
-		return wrapK8sError(err, fmt.Sprintf("failed to get cluster %s", req.Name))
-	}
-
-	if cluster.Status.State != clusterv1alpha1.ClusterPending {
-		return apperr.New(apperr.CodeBadRequest, fmt.Sprintf("cluster %s is not in Pending state, current: %s", req.Name, cluster.Status.State))
-	}
-
-	cluster.Status.State = clusterv1alpha1.ClusterRejected
-	if err := s.k8sClient.Status().Update(ctx, cluster); err != nil {
-		return wrapK8sError(err, fmt.Sprintf("failed to reject cluster %s", req.Name))
-	}
-	return nil
 }
 
 // Delete deletes cluster

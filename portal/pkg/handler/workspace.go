@@ -42,14 +42,14 @@ func (c *WorkspaceController) Version() string {
 func (c *WorkspaceController) Middlewares() []ginserver.MiddlewaresObject {
 	return []ginserver.MiddlewaresObject{
 		{
-			Methods: []string{"GET"},
+			Methods: []string{"get", "list"},
 			Middlewares: []gin.HandlerFunc{
 				c.authMiddleware.Auth(),
 				middleware.RequirePermission(c.roleSvc, model.ResourceWorkspace, model.ActionRead),
 			},
 		},
 		{
-			Methods: []string{"POST", "PUT", "DELETE"},
+			Methods: []string{"create", "update", "delete"},
 			Middlewares: []gin.HandlerFunc{
 				c.authMiddleware.Auth(),
 				middleware.RequirePermission(c.roleSvc, model.ResourceWorkspace, model.ActionWrite),

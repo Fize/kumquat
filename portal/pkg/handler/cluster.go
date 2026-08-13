@@ -42,7 +42,7 @@ func (c *ClusterController) Version() string {
 func (c *ClusterController) Middlewares() []ginserver.MiddlewaresObject {
 	return []ginserver.MiddlewaresObject{
 		{
-			Methods: []string{"*"}, // All methods require Admin permission
+			Methods: []string{"create", "delete", "update", "patch", "get", "list"}, // All methods require Admin permission
 			Middlewares: []gin.HandlerFunc{
 				c.authMiddleware.Auth(),
 				middleware.RequireRole(model.RoleAdmin),
@@ -101,44 +101,6 @@ func (c *ClusterController) Get() (gin.HandlerFunc, error) {
 		}
 
 		utils.Success(ctx, cluster)
-	}, nil
-}
-
-// Approve POST /clusters/:id/approve
-func (c *ClusterController) Approve() (gin.HandlerFunc, error) {
-	return func(ctx *gin.Context) {
-		name := ctx.Param("id")
-		if name == "" {
-			utils.BadRequest(ctx, "cluster name is required")
-			return
-		}
-
-		if err := c.svc.Approve(ctx.Request.Context(), &service.ApproveClusterRequest{Name: name}); err != nil {
-			log.ErrorContext(ctx.Request.Context(), "failed to approve cluster", "cluster", name, "err", err)
-			utils.ErrorFromErr(ctx, err)
-			return
-		}
-
-		utils.SuccessWithMessage(ctx, "cluster approved successfully", nil)
-	}, nil
-}
-
-// Reject POST /clusters/:id/reject
-func (c *ClusterController) Reject() (gin.HandlerFunc, error) {
-	return func(ctx *gin.Context) {
-		name := ctx.Param("id")
-		if name == "" {
-			utils.BadRequest(ctx, "cluster name is required")
-			return
-		}
-
-		if err := c.svc.Reject(ctx.Request.Context(), &service.RejectClusterRequest{Name: name}); err != nil {
-			log.ErrorContext(ctx.Request.Context(), "failed to reject cluster", "cluster", name, "err", err)
-			utils.ErrorFromErr(ctx, err)
-			return
-		}
-
-		utils.SuccessWithMessage(ctx, "cluster rejected successfully", nil)
 	}, nil
 }
 

@@ -49,11 +49,11 @@ func (c *UserController) Version() string { return "v1" }
 func (c *UserController) Middlewares() []ginserver.MiddlewaresObject {
 	return []ginserver.MiddlewaresObject{
 		{
-			Methods:     []string{"GET"},
+			Methods:     []string{"get", "list"},
 			Middlewares: []gin.HandlerFunc{c.authMiddleware.Auth(), middleware.RequirePermission(c.rs, "user", "read")},
 		},
 		{
-			Methods:     []string{"POST", "DELETE", "PUT"},
+			Methods:     []string{"create", "delete", "update"},
 			Middlewares: []gin.HandlerFunc{c.authMiddleware.Auth(), middleware.RequireRole("admin")},
 		},
 	}

@@ -44,14 +44,14 @@ func (c *ApplicationController) Version() string {
 func (c *ApplicationController) Middlewares() []ginserver.MiddlewaresObject {
 	return []ginserver.MiddlewaresObject{
 		{
-			Methods: []string{"GET"},
+			Methods: []string{"get", "list"},
 			Middlewares: []gin.HandlerFunc{
 				c.authMiddleware.Auth(),
 				middleware.RequirePermission(c.roleSvc, model.ResourceApplication, model.ActionRead),
 			},
 		},
 		{
-			Methods: []string{"POST", "PUT", "DELETE", "PATCH"},
+			Methods: []string{"create", "update", "delete", "patch"},
 			Middlewares: []gin.HandlerFunc{
 				c.authMiddleware.Auth(),
 				middleware.RequirePermission(c.roleSvc, model.ResourceApplication, model.ActionWrite),

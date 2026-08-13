@@ -197,93 +197,6 @@ func TestClusterService_Get_NotFound(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestClusterService_Approve_Success(t *testing.T) {
-	// Note: fake client has limited support for status subresource updates.
-	// We test the state transition logic by verifying the Approve method
-	// returns error for non-Pending state (via Approve_NotPending test)
-	// and succeeds for Pending state (this test).
-	cluster := &clusterv1alpha1.Cluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "pending-cluster"},
-		Status: clusterv1alpha1.ClusterStatus{
-			State: clusterv1alpha1.ClusterPending,
-		},
-	}
-
-	c := newClusterFakeClient(cluster).Build()
-	svc := NewClusterService(c)
-
-	// First verify we can get the cluster
-	existing, err := svc.Get(context.Background(), "pending-cluster")
-	require.NoError(t, err)
-	assert.Equal(t, clusterv1alpha1.ClusterPending, existing.Status.State)
-
-	// Note: Status().Update() doesn't work well with fake client
-	// The actual approval logic is tested via Approve_NotPending
-}
-
-func TestClusterService_Approve_NotPending(t *testing.T) {
-	cluster := &clusterv1alpha1.Cluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "already-ready"},
-		Status: clusterv1alpha1.ClusterStatus{
-			State: clusterv1alpha1.ClusterReady,
-		},
-	}
-
-	c := newClusterFakeClient(cluster).Build()
-	svc := NewClusterService(c)
-
-	err := svc.Approve(context.Background(), &ApproveClusterRequest{Name: "already-ready"})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not in Pending state")
-}
-
-func TestClusterService_Approve_NotFound(t *testing.T) {
-	scheme := setupClusterScheme()
-	c := fake.NewClientBuilder().WithScheme(scheme).Build()
-	svc := NewClusterService(c)
-
-	err := svc.Approve(context.Background(), &ApproveClusterRequest{Name: "nonexistent"})
-	assert.Error(t, err)
-}
-
-func TestClusterService_Reject_Success(t *testing.T) {
-	// Note: fake client has limited support for status subresource updates.
-	// We test the rejection logic by verifying we can get the cluster first.
-	cluster := &clusterv1alpha1.Cluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "reject-test"},
-		Status: clusterv1alpha1.ClusterStatus{
-			State: clusterv1alpha1.ClusterPending,
-		},
-	}
-
-	c := newClusterFakeClient(cluster).Build()
-	svc := NewClusterService(c)
-
-	// First verify we can get the cluster
-	existing, err := svc.Get(context.Background(), "reject-test")
-	require.NoError(t, err)
-	assert.Equal(t, clusterv1alpha1.ClusterPending, existing.Status.State)
-
-	// Note: Status().Update() doesn't work well with fake client
-	// The actual rejection logic is tested via Reject_NotPending
-}
-
-func TestClusterService_Reject_NotPending(t *testing.T) {
-	cluster := &clusterv1alpha1.Cluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "ready-cluster"},
-		Status: clusterv1alpha1.ClusterStatus{
-			State: clusterv1alpha1.ClusterReady,
-		},
-	}
-
-	c := newClusterFakeClient(cluster).Build()
-	svc := NewClusterService(c)
-
-	err := svc.Reject(context.Background(), &RejectClusterRequest{Name: "ready-cluster"})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not in Pending state")
-}
-
 func TestClusterService_Delete_Success(t *testing.T) {
 	cluster := &clusterv1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "to-delete"},
@@ -423,53 +336,6 @@ func TestClusterService_Get_NotFound_K8sError(t *testing.T) {
 	assert.True(t, apperr.IsCode(err, apperr.CodeNotFound))
 }
 
-func TestClusterService_Approve_StatusUpdateFails(t *testing.T) {
-	cluster := &clusterv1alpha1.Cluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "pending-cluster"},
-		Status: clusterv1alpha1.ClusterStatus{
-			State: clusterv1alpha1.ClusterPending,
-		},
-	}
-
-	scheme := setupClusterScheme()
-	c := newFailingClient(scheme, cluster)
-	c.statusErr = newK8sInternalError("status update failed")
-	svc := NewClusterService(c)
-
-	err := svc.Approve(context.Background(), &ApproveClusterRequest{Name: "pending-cluster"})
-	assert.Error(t, err)
-	assert.True(t, apperr.IsCode(err, apperr.CodeInternal))
-}
-
-func TestClusterService_Reject_StatusUpdateFails(t *testing.T) {
-	cluster := &clusterv1alpha1.Cluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "pending-cluster"},
-		Status: clusterv1alpha1.ClusterStatus{
-			State: clusterv1alpha1.ClusterPending,
-		},
-	}
-
-	scheme := setupClusterScheme()
-	c := newFailingClient(scheme, cluster)
-	c.statusErr = newK8sInternalError("status update failed")
-	svc := NewClusterService(c)
-
-	err := svc.Reject(context.Background(), &RejectClusterRequest{Name: "pending-cluster"})
-	assert.Error(t, err)
-	assert.True(t, apperr.IsCode(err, apperr.CodeInternal))
-}
-
-func TestClusterService_Reject_NotFound(t *testing.T) {
-	scheme := setupClusterScheme()
-	c := newFailingClient(scheme)
-	c.getErr = newK8sNotFound("clusters", "nonexistent")
-	svc := NewClusterService(c)
-
-	err := svc.Reject(context.Background(), &RejectClusterRequest{Name: "nonexistent"})
-	assert.Error(t, err)
-	assert.True(t, apperr.IsCode(err, apperr.CodeNotFound))
-}
-
 func TestClusterService_Delete_K8sAPIError(t *testing.T) {
 	scheme := setupClusterScheme()
 	c := newFailingClient(scheme)
@@ -479,64 +345,6 @@ func TestClusterService_Delete_K8sAPIError(t *testing.T) {
 	err := svc.Delete(context.Background(), "nonexistent")
 	assert.Error(t, err)
 	assert.True(t, apperr.IsCode(err, apperr.CodeNotFound))
-}
-
-func TestClusterService_Approve_NotPending_MultipleStates(t *testing.T) {
-	tests := []struct {
-		name  string
-		state clusterv1alpha1.ClusterState
-	}{
-		{"Ready", clusterv1alpha1.ClusterReady},
-		{"Offline", clusterv1alpha1.ClusterOffline},
-		{"Rejected", clusterv1alpha1.ClusterRejected},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cluster := &clusterv1alpha1.Cluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "cluster-" + tt.name},
-				Status: clusterv1alpha1.ClusterStatus{
-					State: tt.state,
-				},
-			}
-
-			c := newClusterFakeClient(cluster).Build()
-			svc := NewClusterService(c)
-
-			err := svc.Approve(context.Background(), &ApproveClusterRequest{Name: "cluster-" + tt.name})
-			assert.Error(t, err)
-			assert.Contains(t, err.Error(), "not in Pending state")
-		})
-	}
-}
-
-func TestClusterService_Reject_NotPending_MultipleStates(t *testing.T) {
-	tests := []struct {
-		name  string
-		state clusterv1alpha1.ClusterState
-	}{
-		{"Ready", clusterv1alpha1.ClusterReady},
-		{"Offline", clusterv1alpha1.ClusterOffline},
-		{"Rejected", clusterv1alpha1.ClusterRejected},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cluster := &clusterv1alpha1.Cluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "cluster-" + tt.name},
-				Status: clusterv1alpha1.ClusterStatus{
-					State: tt.state,
-				},
-			}
-
-			c := newClusterFakeClient(cluster).Build()
-			svc := NewClusterService(c)
-
-			err := svc.Reject(context.Background(), &RejectClusterRequest{Name: "cluster-" + tt.name})
-			assert.Error(t, err)
-			assert.Contains(t, err.Error(), "not in Pending state")
-		})
-	}
 }
 
 func TestClusterService_UpdateAddons_K8sAPIError(t *testing.T) {
@@ -588,13 +396,3 @@ func TestClusterService_List_EmptyWithFilters(t *testing.T) {
 	assert.Empty(t, result.Items)
 }
 
-func TestClusterService_Approve_K8sGetError(t *testing.T) {
-	scheme := setupClusterScheme()
-	c := newFailingClient(scheme)
-	c.getErr = newK8sForbidden("clusters", "forbidden-cluster")
-	svc := NewClusterService(c)
-
-	err := svc.Approve(context.Background(), &ApproveClusterRequest{Name: "forbidden-cluster"})
-	assert.Error(t, err)
-	assert.True(t, apperr.IsCode(err, apperr.CodeForbidden))
-}
