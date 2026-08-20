@@ -41,7 +41,7 @@ check_prerequisites() {
 build_images() {
   log "building Engine and API images"
   docker build -t "${ENGINE_IMAGE}" "${PROJECT_ROOT}/engine"
-  docker build -t "${API_IMAGE}" -f "${SCRIPT_DIR}/config/api-Dockerfile" "${PROJECT_ROOT}"
+  docker build -t "${API_IMAGE}" -f "${SCRIPT_DIR}/config/apiserver-Dockerfile" "${PROJECT_ROOT}"
 }
 
 create_clusters() {
@@ -204,10 +204,10 @@ YAML
 
 deploy_api() {
   log "deploying API with MySQL Secret references"
-  kubectl --context "${HUB_CONTEXT}" apply -f "${PROJECT_ROOT}/api/deployments/rbac.yaml" >/dev/null
-  kubectl --context "${HUB_CONTEXT}" apply -f "${PROJECT_ROOT}/api/deployments/configmap.yaml" >/dev/null
-  kubectl --context "${HUB_CONTEXT}" apply -f "${PROJECT_ROOT}/api/deployments/deployment.yaml" >/dev/null
-  kubectl --context "${HUB_CONTEXT}" apply -f "${PROJECT_ROOT}/api/deployments/service.yaml" >/dev/null
+  kubectl --context "${HUB_CONTEXT}" apply -f "${PROJECT_ROOT}/apiserver/deployments/rbac.yaml" >/dev/null
+  kubectl --context "${HUB_CONTEXT}" apply -f "${PROJECT_ROOT}/apiserver/deployments/configmap.yaml" >/dev/null
+  kubectl --context "${HUB_CONTEXT}" apply -f "${PROJECT_ROOT}/apiserver/deployments/deployment.yaml" >/dev/null
+  kubectl --context "${HUB_CONTEXT}" apply -f "${PROJECT_ROOT}/apiserver/deployments/service.yaml" >/dev/null
   kubectl --context "${HUB_CONTEXT}" -n "${NAMESPACE}" set image deployment/api \
     api="${API_IMAGE}" >/dev/null
   kubectl --context "${HUB_CONTEXT}" -n "${NAMESPACE}" patch service api --type merge \

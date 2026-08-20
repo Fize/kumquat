@@ -13,7 +13,7 @@ test: ## Run engine tests
 	$(MAKE) -C engine test
 
 test-api-mysql: ## Run all API tests against an isolated Docker MySQL 8
-	$(MAKE) -C api test-mysql
+	$(MAKE) -C apiserver test-mysql
 
 test-kumctl-e2e: ## Run one independent kumctl case for every included API operation
 	bash kumctl/test/e2e_api_test.sh

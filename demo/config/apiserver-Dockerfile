@@ -1,0 +1,22 @@
+FROM golang:1.25.0-bookworm AS builder
+WORKDIR /workspace
+COPY engine/go.mod engine/go.sum ./engine/
+COPY engine/pkg/ ./engine/pkg/
+COPY engine/cmd/ ./engine/cmd/
+COPY engine/internal/ ./engine/internal/
+COPY engine/config/ ./engine/config/
+COPY apiserver/go.mod apiserver/go.sum ./apiserver/
+WORKDIR /workspace/apiserver
+RUN GOTOOLCHAIN=local go mod download
+COPY apiserver/cmd/ ./cmd/
+COPY apiserver/pkg/ ./pkg/
+COPY apiserver/config/ ./config/
+COPY apiserver/openapi/ ./openapi/
+RUN GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux go build -a -o kumquat-api ./cmd/server
+FROM debian:bullseye-slim
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=builder /workspace/apiserver/kumquat-api .
+COPY --from=builder /workspace/apiserver/config/ ./config/
+EXPOSE 8080
+ENTRYPOINT ["/app/kumquat-api"]

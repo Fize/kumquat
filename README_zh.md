@@ -19,7 +19,7 @@ Kumquat 是一个云原生多集群应用管理平台，旨在简化跨多个 Ku
 
 ## 架构
 
-API 使用 SQL 保存权威的业务期望状态和资源关系。`api/config/config.yaml`
+API 使用 SQL 保存权威的业务期望状态和资源关系。`apiserver/config/config.yaml`
 只将 SQLite 保留为显式的本地开发选项；Kubernetes 部署和 Kind Demo 从 Secret
 读取 MySQL 凭据，不挂载 SQLite 数据库。
 
@@ -51,13 +51,13 @@ Kumquat 采用 Hub-Spoke 架构来高效管理多集群环境。
 |------|------|------|
 | [engine/](engine/) | Engine | 核心系统：多集群应用分发、调度和管理 |
 | [armory/](armory/) | Armory | 基础 Docker 镜像构建（Alpine、Go、Node） |
-| [api/](api/) | API | 业务 API Gateway：关系/期望状态权威源，并将执行投影到 Engine |
+| [apiserver/](apiserver/) | API | 业务 API Gateway：关系/期望状态权威源，并将执行投影到 Engine |
 | [kumctl/](kumctl/) | Kumctl | 仅通过 API 交互的用户与 Agent 命令行入口 |
 
 ## 快速开始
 
 数据库集成测试和本地 Kind Demo 统一使用 MySQL 8。SQLite 只保留给
-`api/config/config.yaml` 所描述的显式本地开发模式。
+`apiserver/config/config.yaml` 所描述的显式本地开发模式。
 
 ```bash
 make test-api-mysql
