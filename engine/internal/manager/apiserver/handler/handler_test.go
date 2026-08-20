@@ -21,14 +21,15 @@ func TestValidateBootstrapToken(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
 
-	tokenID := "abcdef"
+	tokenID := bootstrapTokenIDForCluster("test-cluster")
 	tokenSecret := "1234567890abcdef"
 	token := tokenID + "." + tokenSecret
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "bootstrap-token-" + tokenID,
-			Namespace: "kube-system",
+			Name:        "bootstrap-token-" + tokenID,
+			Namespace:   "kube-system",
+			Annotations: map[string]string{bootstrapClusterAnnotation: "test-cluster"},
 		},
 		Type: bootstrapapi.SecretTypeBootstrapToken,
 		Data: map[string][]byte{
@@ -36,16 +37,17 @@ func TestValidateBootstrapToken(t *testing.T) {
 			bootstrapapi.BootstrapTokenSecretKey:           []byte(tokenSecret),
 			bootstrapapi.BootstrapTokenUsageAuthentication: []byte("true"),
 			bootstrapapi.BootstrapTokenExpirationKey:       []byte(time.Now().Add(time.Hour).Format(time.RFC3339)),
+			bootstrapapi.BootstrapTokenExtraGroupsKey:      []byte("system:bootstrappers:engine-agent:test-cluster"),
 		},
 	}
 
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret).Build()
 
-	if !validateBootstrapToken(c, token) {
+	if cluster, ok := validateBootstrapToken(c, token); !ok || cluster != "test-cluster" {
 		t.Error("expected token to be valid")
 	}
 
-	if validateBootstrapToken(c, "invalid.token") {
+	if _, ok := validateBootstrapToken(c, "invalid.token"); ok {
 		t.Error("expected invalid token to be rejected")
 	}
 
@@ -53,8 +55,38 @@ func TestValidateBootstrapToken(t *testing.T) {
 	expiredSecret := secret.DeepCopy()
 	expiredSecret.Data[bootstrapapi.BootstrapTokenExpirationKey] = []byte(time.Now().Add(-time.Hour).Format(time.RFC3339))
 	c2 := fake.NewClientBuilder().WithScheme(scheme).WithObjects(expiredSecret).Build()
-	if validateBootstrapToken(c2, token) {
+	if _, ok := validateBootstrapToken(c2, token); ok {
 		t.Error("expected expired token to be rejected")
+	}
+	wrongGroup := secret.DeepCopy()
+	wrongGroup.Data[bootstrapapi.BootstrapTokenExtraGroupsKey] = []byte("system:bootstrappers:engine-agent:other")
+	c3 := fake.NewClientBuilder().WithScheme(scheme).WithObjects(wrongGroup).Build()
+	if _, ok := validateBootstrapToken(c3, token); ok {
+		t.Error("expected non-exact bootstrap group to be rejected")
+	}
+	missingClaim := secret.DeepCopy()
+	delete(missingClaim.Annotations, bootstrapClusterAnnotation)
+	c4 := fake.NewClientBuilder().WithScheme(scheme).WithObjects(missingClaim).Build()
+	if _, ok := validateBootstrapToken(c4, token); ok {
+		t.Error("expected missing cluster claim to be rejected")
+	}
+}
+
+func TestAuthorizeClusterHeadersRequiresExactClaimMatch(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("X-Kumquat-Cluster-Name", "edge-a")
+	headers.Set("X-Remotedialer-ID", "edge-a")
+	cluster, err := authorizeClusterHeaders(headers, "edge-a")
+	if err != nil || cluster != "edge-a" {
+		t.Fatalf("expected exact identity match, cluster=%q err=%v", cluster, err)
+	}
+	headers.Set("X-Remotedialer-ID", "edge-b")
+	if _, err := authorizeClusterHeaders(headers, "edge-a"); err == nil {
+		t.Fatal("expected mismatched remotedialer identity to be rejected")
+	}
+	headers.Set("X-Remotedialer-ID", "edge-a")
+	if _, err := authorizeClusterHeaders(headers, "edge-b"); err == nil {
+		t.Fatal("expected token claim mismatch to be rejected")
 	}
 }
 
@@ -181,21 +213,23 @@ func TestAuthorizer(t *testing.T) {
 	_ = corev1.AddToScheme(scheme)
 	_ = clusterv1alpha1.AddToScheme(scheme)
 
-	tokenID := "abcdef"
+	tokenID := bootstrapTokenIDForCluster("test-cluster")
 	tokenSecret := "1234567890abcdef"
 	token := tokenID + "." + tokenSecret
 	clusterName := "test-cluster"
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "bootstrap-token-" + tokenID,
-			Namespace: "kube-system",
+			Name:        "bootstrap-token-" + tokenID,
+			Namespace:   "kube-system",
+			Annotations: map[string]string{bootstrapClusterAnnotation: clusterName},
 		},
 		Type: bootstrapapi.SecretTypeBootstrapToken,
 		Data: map[string][]byte{
 			bootstrapapi.BootstrapTokenIDKey:               []byte(tokenID),
 			bootstrapapi.BootstrapTokenSecretKey:           []byte(tokenSecret),
 			bootstrapapi.BootstrapTokenUsageAuthentication: []byte("true"),
+			bootstrapapi.BootstrapTokenExtraGroupsKey:      []byte("system:bootstrappers:engine-agent:" + clusterName),
 		},
 	}
 

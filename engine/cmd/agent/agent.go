@@ -19,15 +19,16 @@ package main
 import (
 	"flag"
 	"os"
+	"strings"
 	"time"
 
-	"github.com/fize/kumquat/engine/internal/agent/addon"
-	"github.com/fize/kumquat/engine/pkg/observability"
-	"github.com/fize/kumquat/engine/pkg/scheme"
 	_ "github.com/fize/kumquat/engine/internal/addon/kruiserollout"
 	_ "github.com/fize/kumquat/engine/internal/addon/mcs"
 	_ "github.com/fize/kumquat/engine/internal/addon/victoriametrics"
+	"github.com/fize/kumquat/engine/internal/agent/addon"
 	"github.com/fize/kumquat/engine/internal/agent/cluster"
+	"github.com/fize/kumquat/engine/pkg/observability"
+	"github.com/fize/kumquat/engine/pkg/scheme"
 	"github.com/spf13/pflag"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -41,6 +42,12 @@ import (
 var (
 	setupLog   = ctrl.Log.WithName("setup")
 	_Namespace string
+)
+
+const (
+	bootstrapTokenFileEnv = "KUMQUAT_AGENT_BOOTSTRAP_TOKEN_FILE"
+	hubCAFileEnv          = "KUMQUAT_AGENT_HUB_CA_FILE"
+	tunnelCAFileEnv       = "KUMQUAT_AGENT_TUNNEL_CA_FILE"
 )
 
 func init() {
@@ -57,7 +64,7 @@ func main() {
 	var hubURL string
 	var tunnelURL string
 	var clusterName string
-	var bootstrapToken string
+	var enableAddons bool
 	var heartbeatInterval time.Duration
 	var otlpEndpoint string
 	var otlpInsecure bool
@@ -77,7 +84,7 @@ func main() {
 	pflag.StringVar(&hubURL, "hub-url", "", "The URL of the Hub API Server")
 	pflag.StringVar(&tunnelURL, "tunnel-url", "", "The URL of the Tunnel Server")
 	pflag.StringVar(&clusterName, "cluster-name", "", "The name of this cluster in the Hub")
-	pflag.StringVar(&bootstrapToken, "bootstrap-token", "", "The bootstrap token for authentication")
+	pflag.BoolVar(&enableAddons, "enable-addons", false, "Allow the agent to install explicitly configured addons")
 	pflag.DurationVar(&heartbeatInterval, "heartbeat-interval", 1*time.Minute, "The interval for sending heartbeats")
 	pflag.StringVar(&otlpEndpoint, "otlp-endpoint", "", "The OTLP endpoint for trace export (e.g. otel-collector:4317). Empty means tracing disabled.")
 	pflag.BoolVar(&otlpInsecure, "otlp-insecure", true, "Use insecure connection for OTLP gRPC.")
@@ -125,14 +132,16 @@ func main() {
 	ctx := ctrl.SetupSignalHandler()
 
 	// Initialize and run Cluster Agent if configured
-	if clusterName != "" && tunnelURL != "" {
+	if clusterName != "" {
 		setupLog.Info("Starting Cluster Agent...")
 		clusterAgent := cluster.NewAgent(cluster.AgentOptions{
-			HubURL:            hubURL,
-			TunnelURL:         tunnelURL,
-			ClusterName:       clusterName,
-			BootstrapToken:    bootstrapToken,
-			HeartbeatInterval: heartbeatInterval,
+			HubURL:             hubURL,
+			TunnelURL:          tunnelURL,
+			ClusterName:        clusterName,
+			BootstrapTokenFile: strings.TrimSpace(os.Getenv(bootstrapTokenFileEnv)),
+			HubCAFile:          strings.TrimSpace(os.Getenv(hubCAFileEnv)),
+			TunnelCAFile:       strings.TrimSpace(os.Getenv(tunnelCAFileEnv)),
+			HeartbeatInterval:  heartbeatInterval,
 		})
 
 		if err := clusterAgent.InitHubClient(); err != nil {
@@ -154,24 +163,21 @@ func main() {
 			}
 		}()
 
-		go func() {
-			if err := clusterAgent.StartTunnel(ctx); err != nil {
-				setupLog.Error(err, "Tunnel failed")
-			}
-		}()
+		if tunnelURL != "" {
+			go func() {
+				if err := clusterAgent.StartTunnel(ctx); err != nil {
+					setupLog.Error(err, "Tunnel failed")
+				}
+			}()
 
-		// Setup addon reconciler to reconcile addons from Hub
-		addonReconciler := &addon.AddonReconciler{
-			HubClient:   clusterAgent.HubClient,
-			LocalClient: mgr.GetClient(),
-			Scheme:      scheme.Scheme,
-			ClusterName: clusterName,
+			if enableAddons {
+				addonReconciler := &addon.AddonReconciler{HubClient: clusterAgent.HubClient, LocalClient: mgr.GetClient(), Scheme: scheme.Scheme, ClusterName: clusterName}
+				if err := addonReconciler.SetupWithManager(mgr); err != nil {
+					setupLog.Error(err, "unable to create addon reconciler")
+					os.Exit(1)
+				}
+			}
 		}
-		if err := addonReconciler.SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create addon reconciler")
-			os.Exit(1)
-		}
-		setupLog.Info("Addon reconciler initialized")
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

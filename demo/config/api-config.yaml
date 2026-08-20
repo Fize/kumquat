@@ -1,0 +1,12 @@
+server:
+  bindAddr: ":8080"
+  metrics: {enabled: true, serviceName: api, path: /metrics, port: 9090}
+  trace: {enabled: false, serviceName: api, stdout: true}
+log: {level: info, format: json}
+custom:
+  jwt:
+    secret: ""
+    expire_duration: 24h
+    reset_expire_duration: 10m
+  security: {allowed_email_domains: []}
+  kubernetes: {kubeconfig_path: "", master_url: ""}

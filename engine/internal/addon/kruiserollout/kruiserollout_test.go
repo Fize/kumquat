@@ -63,7 +63,9 @@ func TestKruiseRolloutAddon_Manifests(t *testing.T) {
 }
 
 func TestManagerController_Reconcile(t *testing.T) {
+	mockClient := &mockHelmClient{}
 	controller := &ManagerController{}
+	controller.SetHelmClient(mockClient)
 
 	config := addon.AddonConfig{
 		ClusterName: "test-cluster",
@@ -72,6 +74,7 @@ func TestManagerController_Reconcile(t *testing.T) {
 
 	err := controller.Reconcile(context.Background(), config)
 	assert.NoError(t, err)
+	assert.True(t, mockClient.installOrUpgradeCalled)
 }
 
 func TestAgentController_Reconcile(t *testing.T) {

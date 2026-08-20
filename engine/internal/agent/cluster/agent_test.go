@@ -2,7 +2,14 @@ package cluster
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,12 +19,101 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	appsv1alpha1 "github.com/fize/kumquat/engine/pkg/apis/apps/v1alpha1"
 	clusterv1alpha1 "github.com/fize/kumquat/engine/pkg/apis/storage/v1alpha1"
 )
+
+func useProjectedCredentials(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	tokenPath := filepath.Join(dir, "token")
+	caPath := filepath.Join(dir, "ca.crt")
+	require.NoError(t, os.WriteFile(tokenPath, []byte("projected-token"), 0o600))
+	require.NoError(t, os.WriteFile(caPath, []byte("projected-ca"), 0o600))
+	originalTokenPath, originalCAPath := serviceAccountTokenPath, serviceAccountCAPath
+	serviceAccountTokenPath, serviceAccountCAPath = tokenPath, caPath
+	t.Cleanup(func() { serviceAccountTokenPath, serviceAccountCAPath = originalTokenPath, originalCAPath })
+}
+
+func testCAPEM(t *testing.T) []byte {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "test-ca"}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	require.NoError(t, err)
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+}
+
+func TestAgentLocalReporterRequiresExplicitLocalMarker(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clusterv1alpha1.AddToScheme(scheme))
+	cluster := &clusterv1alpha1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "ambiguous-hub"},
+		Spec:       clusterv1alpha1.ManagedClusterSpec{ConnectionMode: clusterv1alpha1.ClusterConnectionModeHub},
+	}
+	agent := &Agent{Options: AgentOptions{ClusterName: cluster.Name}, HubClient: fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster).Build()}
+	require.ErrorContains(t, agent.Register(context.Background()), "explicit local")
+}
+
+func TestAgentHeartbeatPublishesRotatedProjectedCredentials(t *testing.T) {
+	dir := t.TempDir()
+	tokenPath := filepath.Join(dir, "token")
+	caPath := filepath.Join(dir, "ca.crt")
+	require.NoError(t, os.WriteFile(tokenPath, []byte("token-b"), 0o600))
+	require.NoError(t, os.WriteFile(caPath, []byte("ca-b"), 0o600))
+	originalTokenPath, originalCAPath := serviceAccountTokenPath, serviceAccountCAPath
+	serviceAccountTokenPath, serviceAccountCAPath = tokenPath, caPath
+	t.Cleanup(func() { serviceAccountTokenPath, serviceAccountCAPath = originalTokenPath, originalCAPath })
+	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "443")
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, clusterv1alpha1.AddToScheme(scheme))
+	cluster := &clusterv1alpha1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "edge", Annotations: map[string]string{constants.AnnotationCredentialsHash: credentialsHash(map[string]string{constants.AnnotationCredentialsToken: "token-a"})}},
+		Spec:       clusterv1alpha1.ManagedClusterSpec{ConnectionMode: clusterv1alpha1.ClusterConnectionModeEdge},
+	}
+	hubClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster).WithStatusSubresource(cluster).Build()
+	agent := &Agent{Options: AgentOptions{ClusterName: cluster.Name, HubURL: "https://hub", BootstrapToken: "bootstrap"}, HubClient: hubClient}
+	require.NoError(t, agent.sendHeartbeat(context.Background()))
+	var got clusterv1alpha1.ManagedCluster
+	require.NoError(t, hubClient.Get(context.Background(), client.ObjectKey{Name: cluster.Name}, &got))
+	assert.Equal(t, "token-b", got.Annotations[constants.AnnotationCredentialsToken])
+	assert.NotEqual(t, cluster.Annotations[constants.AnnotationCredentialsHash], got.Annotations[constants.AnnotationCredentialsHash])
+}
+
+func TestAgentHeartbeatDoesNotPublishIncompleteProjectedCredentials(t *testing.T) {
+	dir := t.TempDir()
+	originalTokenPath, originalCAPath := serviceAccountTokenPath, serviceAccountCAPath
+	serviceAccountTokenPath = filepath.Join(dir, "missing-token")
+	serviceAccountCAPath = filepath.Join(dir, "missing-ca")
+	t.Cleanup(func() { serviceAccountTokenPath, serviceAccountCAPath = originalTokenPath, originalCAPath })
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, clusterv1alpha1.AddToScheme(scheme))
+	cluster := &clusterv1alpha1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "edge", Annotations: map[string]string{
+			constants.AnnotationCredentialsHash:  "sha256:old",
+			constants.AnnotationCredentialsToken: "token-a",
+			constants.AnnotationCredentialsCA:    "ca-a",
+		}},
+		Spec: clusterv1alpha1.ManagedClusterSpec{ConnectionMode: clusterv1alpha1.ClusterConnectionModeEdge},
+	}
+	hubClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster).WithStatusSubresource(cluster).Build()
+	agent := &Agent{Options: AgentOptions{ClusterName: cluster.Name, HubURL: "https://hub"}, HubClient: hubClient}
+	require.ErrorContains(t, agent.sendHeartbeat(context.Background()), "read projected service account")
+
+	var got clusterv1alpha1.ManagedCluster
+	require.NoError(t, hubClient.Get(context.Background(), client.ObjectKey{Name: cluster.Name}, &got))
+	assert.Equal(t, "token-a", got.Annotations[constants.AnnotationCredentialsToken])
+	assert.Equal(t, "ca-a", got.Annotations[constants.AnnotationCredentialsCA])
+	assert.Equal(t, "sha256:old", got.Annotations[constants.AnnotationCredentialsHash])
+}
 
 func TestNewAgent(t *testing.T) {
 	opts := AgentOptions{
@@ -32,15 +128,56 @@ func TestNewAgent(t *testing.T) {
 	if agent.Options.HubURL != opts.HubURL {
 		t.Errorf("expected HubURL %s, got %s", opts.HubURL, agent.Options.HubURL)
 	}
-	if agent.Options.TunnelURL != opts.HubURL {
-		t.Errorf("expected TunnelURL %s, got %s", opts.HubURL, agent.Options.TunnelURL)
+	if agent.Options.TunnelURL != "" {
+		t.Errorf("expected tunnel to remain disabled, got %s", agent.Options.TunnelURL)
 	}
 	if agent.Options.ClusterName != opts.ClusterName {
 		t.Errorf("expected ClusterName %s, got %s", opts.ClusterName, agent.Options.ClusterName)
 	}
 }
 
+func TestInitHubClientUsesRotatingTokenFileAndVerifiedCA(t *testing.T) {
+	dir := t.TempDir()
+	tokenPath := filepath.Join(dir, "token")
+	caPath := filepath.Join(dir, "hub-ca.crt")
+	require.NoError(t, os.WriteFile(tokenPath, []byte("abcdef.1234567890abcdef"), 0o600))
+	require.NoError(t, os.WriteFile(caPath, testCAPEM(t), 0o600))
+	agent := NewAgent(AgentOptions{HubURL: "https://hub.example.test", ClusterName: "edge-a", BootstrapTokenFile: tokenPath, HubCAFile: caPath})
+	require.NoError(t, agent.InitHubClient())
+	assert.Equal(t, tokenPath, agent.HubConfig.BearerTokenFile)
+	assert.Equal(t, caPath, agent.HubConfig.CAFile)
+	assert.Empty(t, agent.HubConfig.BearerToken)
+	assert.False(t, agent.HubConfig.Insecure)
+}
+
+func TestTunnelTLSConfigUsesCAAndSNI(t *testing.T) {
+	dir := t.TempDir()
+	caPath := filepath.Join(dir, "tunnel-ca.crt")
+	require.NoError(t, os.WriteFile(caPath, testCAPEM(t), 0o600))
+	agent := NewAgent(AgentOptions{TunnelURL: "https://tunnel.example.test:5443", TunnelCAFile: caPath})
+	config, err := agent.tunnelTLSConfig()
+	require.NoError(t, err)
+	assert.False(t, config.InsecureSkipVerify)
+	assert.Equal(t, "tunnel.example.test", config.ServerName)
+	assert.NotNil(t, config.RootCAs)
+}
+
+func TestTunnelHeadersReloadRotatedTokenFile(t *testing.T) {
+	dir := t.TempDir()
+	tokenPath := filepath.Join(dir, "token")
+	require.NoError(t, os.WriteFile(tokenPath, []byte("token-a\n"), 0o600))
+	agent := NewAgent(AgentOptions{ClusterName: "edge-a", BootstrapTokenFile: tokenPath})
+	headers, err := agent.tunnelHeaders()
+	require.NoError(t, err)
+	assert.Equal(t, "Bearer token-a", headers.Get("Authorization"))
+	require.NoError(t, os.WriteFile(tokenPath, []byte("token-b\n"), 0o600))
+	headers, err = agent.tunnelHeaders()
+	require.NoError(t, err)
+	assert.Equal(t, "Bearer token-b", headers.Get("Authorization"))
+}
+
 func TestAgent_Register(t *testing.T) {
+	useProjectedCredentials(t)
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
 	_ = clusterv1alpha1.AddToScheme(scheme)
@@ -51,7 +188,9 @@ func TestAgent_Register(t *testing.T) {
 
 	agent := &Agent{
 		Options: AgentOptions{
-			ClusterName: clusterName,
+			ClusterName:    clusterName,
+			HubURL:         "https://hub.example.test",
+			BootstrapToken: "test-token",
 		},
 		HubClient: hubClient,
 	}
@@ -71,6 +210,9 @@ func TestAgent_Register(t *testing.T) {
 	if cluster.Spec.ConnectionMode != clusterv1alpha1.ClusterConnectionModeEdge {
 		t.Errorf("expected connection mode %s, got %s", clusterv1alpha1.ClusterConnectionModeEdge, cluster.Spec.ConnectionMode)
 	}
+	if cluster.Labels[constants.LabelRegistrationSource] != constants.RegistrationSourceAgent {
+		t.Fatalf("registration source label = %q", cluster.Labels[constants.LabelRegistrationSource])
+	}
 
 	// 2. Register existing cluster (update)
 	err = agent.Register(context.Background())
@@ -79,7 +221,23 @@ func TestAgent_Register(t *testing.T) {
 	}
 }
 
+func TestAgentRegisterIncompleteProjectedCredentialsDoesNotCreate(t *testing.T) {
+	dir := t.TempDir()
+	originalTokenPath, originalCAPath := serviceAccountTokenPath, serviceAccountCAPath
+	serviceAccountTokenPath = filepath.Join(dir, "missing-token")
+	serviceAccountCAPath = filepath.Join(dir, "missing-ca")
+	t.Cleanup(func() { serviceAccountTokenPath, serviceAccountCAPath = originalTokenPath, originalCAPath })
+	scheme := runtime.NewScheme()
+	require.NoError(t, clusterv1alpha1.AddToScheme(scheme))
+	hubClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	agent := &Agent{Options: AgentOptions{ClusterName: "edge-incomplete", HubURL: "https://hub"}, HubClient: hubClient}
+	require.ErrorContains(t, agent.Register(context.Background()), "read projected service account")
+	var got clusterv1alpha1.ManagedCluster
+	require.Error(t, hubClient.Get(context.Background(), client.ObjectKey{Name: "edge-incomplete"}, &got))
+}
+
 func TestAgent_SendHeartbeat(t *testing.T) {
+	useProjectedCredentials(t)
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
 	_ = clusterv1alpha1.AddToScheme(scheme)
@@ -100,7 +258,9 @@ func TestAgent_SendHeartbeat(t *testing.T) {
 
 	agent := &Agent{
 		Options: AgentOptions{
-			ClusterName: clusterName,
+			ClusterName:    clusterName,
+			HubURL:         "https://hub.example.test",
+			BootstrapToken: "test-token",
 		},
 		HubClient: hubClient,
 	}
@@ -220,6 +380,11 @@ func TestAgent_InitHubClient_WithHubURLAndToken(t *testing.T) {
 }
 
 func TestAgent_InitHubClient_EmptyHubURLAndToken(t *testing.T) {
+	original := inClusterConfig
+	t.Cleanup(func() { inClusterConfig = original })
+	inClusterConfig = func() (*rest.Config, error) {
+		return &rest.Config{Host: "https://kubernetes.default.svc"}, nil
+	}
 	agent := &Agent{
 		Options: AgentOptions{
 			HubURL:         "",
@@ -228,11 +393,8 @@ func TestAgent_InitHubClient_EmptyHubURLAndToken(t *testing.T) {
 		},
 	}
 
-	// When HubURL and BootstrapToken are empty, it will try to load kubeconfig
-	// This may fail or succeed depending on the environment
-	err := agent.InitHubClient()
-	// Just verify it doesn't panic - may fail if no kubeconfig exists
-	_ = err
+	require.NoError(t, agent.InitHubClient())
+	assert.Equal(t, "https://kubernetes.default.svc", agent.HubConfig.Host)
 }
 
 func TestAgent_InitHubClient_OnlyHubURL(t *testing.T) {
@@ -264,6 +426,7 @@ func TestAgent_InitHubClient_OnlyToken(t *testing.T) {
 }
 
 func TestAgent_Register_ExistingCluster_Update(t *testing.T) {
+	useProjectedCredentials(t)
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
 	require.NoError(t, clusterv1alpha1.AddToScheme(scheme))
@@ -289,7 +452,9 @@ func TestAgent_Register_ExistingCluster_Update(t *testing.T) {
 
 	agent := &Agent{
 		Options: AgentOptions{
-			ClusterName: clusterName,
+			ClusterName:    clusterName,
+			HubURL:         "https://hub.example.test",
+			BootstrapToken: "test-token",
 		},
 		HubClient: hubClient,
 	}
@@ -328,7 +493,9 @@ func TestAgent_sendHeartbeat_StatusUpdateFallback(t *testing.T) {
 
 	agent := &Agent{
 		Options: AgentOptions{
-			ClusterName: clusterName,
+			ClusterName:    clusterName,
+			HubURL:         "https://hub.example.test",
+			BootstrapToken: "test-token",
 		},
 		HubClient: hubClient,
 	}
@@ -389,15 +556,15 @@ func TestAgent_getClusterCredentials_DefaultAPIServer(t *testing.T) {
 	assert.Equal(t, "https://kubernetes.default.svc:443", creds[constants.AnnotationAPIServerURL])
 }
 
-func TestNewAgent_DefaultTunnelURL(t *testing.T) {
+func TestNewAgent_DoesNotEnableTunnelImplicitly(t *testing.T) {
 	opts := AgentOptions{
 		HubURL:      "https://hub.example.com",
-		TunnelURL:   "", // Empty - should default to HubURL
+		TunnelURL:   "",
 		ClusterName: "test-cluster",
 	}
 
 	agent := NewAgent(opts)
-	assert.Equal(t, "https://hub.example.com", agent.Options.TunnelURL)
+	assert.Empty(t, agent.Options.TunnelURL)
 }
 
 func TestNewAgent_CustomTunnelURL(t *testing.T) {
@@ -412,6 +579,7 @@ func TestNewAgent_CustomTunnelURL(t *testing.T) {
 }
 
 func TestAgent_Register_NilAnnotations(t *testing.T) {
+	useProjectedCredentials(t)
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
 	require.NoError(t, clusterv1alpha1.AddToScheme(scheme))
@@ -432,7 +600,9 @@ func TestAgent_Register_NilAnnotations(t *testing.T) {
 
 	agent := &Agent{
 		Options: AgentOptions{
-			ClusterName: clusterName,
+			ClusterName:    clusterName,
+			HubURL:         "https://hub.example.test",
+			BootstrapToken: "test-token",
 		},
 		HubClient: hubClient,
 	}

@@ -19,6 +19,11 @@ Kumquat is a cloud-native multi-cluster application management platform designed
 
 ## Architecture
 
+The API stores its authoritative business desired state and relationships in SQL.
+`api/config/config.yaml` keeps SQLite only as an explicit local-development option.
+Kubernetes deployments and the Kind demo use MySQL credentials from a Secret and do
+not mount a SQLite database.
+
 Kumquat adopts a Hub-Spoke architecture to manage multi-cluster environments efficiently.
 
 ![Architecture](docs/images/architecture.drawio.png)
@@ -31,7 +36,7 @@ Kumquat adopts a Hub-Spoke architecture to manage multi-cluster environments eff
 | **Scheduler** | Engine | Multi-cluster placement engine with plugin-based Filter/Score architecture |
 | **Agent** | Engine | Runs on Edge clusters, maintains tunnel connection |
 | **Tunnel Server** | Engine | WebSocket-based reverse tunnel for Edge cluster connectivity |
-| **Portal** | Portal | User management, authentication and authorization API |
+| **API** | API | User management, authentication and authorization API |
 | **Kumctl** | Kumctl | Command-line tool for cluster management |
 
 ### Connection Modes
@@ -47,10 +52,20 @@ Kumquat adopts a Hub-Spoke architecture to manage multi-cluster environments eff
 |-----------|------|-------------|
 | [engine/](engine/) | Engine | Core system: multi-cluster application distribution, scheduling and management |
 | [armory/](armory/) | Armory | Base Docker image builds (Alpine, Go, Node) |
-| [portal/](portal/) | Portal | Application-layer API: user management, authentication (TBD) |
-| [kumctl/](kumctl/) | Kumctl | Command-line tool (TBD) |
+| [api/](api/) | API | Business API gateway and desired-state authority projecting execution to Engine |
+| [kumctl/](kumctl/) | Kumctl | API-only command-line entry point for users and agents |
 
 ## Quick Start
+
+Database-backed automated tests and the local Kind demo use MySQL 8. SQLite is
+supported only by the explicit local-development config in `api/config/config.yaml`.
+
+```bash
+make test-api-mysql
+make demo-up
+make demo-test
+make demo-down
+```
 
 ### Prerequisites
 

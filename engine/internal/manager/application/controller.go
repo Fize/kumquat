@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -39,11 +40,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/fize/kumquat/engine/internal/manager/application/overrides"
-	"github.com/fize/kumquat/engine/pkg/observability"
-	appsv1alpha1 "github.com/fize/kumquat/engine/pkg/apis/apps/v1alpha1"
-	clusterv1alpha1 "github.com/fize/kumquat/engine/pkg/apis/storage/v1alpha1"
 	"github.com/fize/kumquat/engine/internal/manager/cluster"
 	managermetrics "github.com/fize/kumquat/engine/internal/manager/metrics"
+	appsv1alpha1 "github.com/fize/kumquat/engine/pkg/apis/apps/v1alpha1"
+	clusterv1alpha1 "github.com/fize/kumquat/engine/pkg/apis/storage/v1alpha1"
+	"github.com/fize/kumquat/engine/pkg/observability"
 	"github.com/fize/kumquat/engine/pkg/util/labels"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -441,13 +442,19 @@ func (r *ApplicationReconciler) reconcileWorkload(ctx context.Context, cli clien
 	u.SetNamespace(app.Namespace)
 
 	// Set managed-by label
-	labels.AddManagedBy(u)
+	labels.CopyBusinessIdentity(u, app)
 
 	// Convert PodTemplateSpec to map
 	log.Info("Reconciling workload", "template", app.Spec.Template)
 
 	// Apply workload specific configurations
 	if err := r.configureWorkload(u, app.Spec, ordinalStart); err != nil {
+		return err
+	}
+	if err := preserveLiveWorkloadSelector(ctx, cli, u, app.Spec.Selector != nil); err != nil {
+		return err
+	}
+	if err := configureImmutablePodIdentity(u, labels.ImmutablePodIdentity(app)); err != nil {
 		return err
 	}
 
@@ -523,6 +530,32 @@ func (r *ApplicationReconciler) reconcileWorkload(ctx context.Context, cli clien
 	return nil
 }
 
+func preserveLiveWorkloadSelector(ctx context.Context, cli client.Client, desired *unstructured.Unstructured, selectorExplicit bool) error {
+	live := &unstructured.Unstructured{}
+	live.SetGroupVersionKind(desired.GroupVersionKind())
+	if err := cli.Get(ctx, client.ObjectKeyFromObject(desired), live); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("read live workload selector: %w", err)
+	}
+	liveSelector, found, err := unstructured.NestedMap(live.Object, "spec", "selector")
+	if err != nil {
+		return fmt.Errorf("read live workload selector: %w", err)
+	}
+	if !found || len(liveSelector) == 0 {
+		return nil
+	}
+	desiredSelector, desiredFound, err := unstructured.NestedMap(desired.Object, "spec", "selector")
+	if err != nil {
+		return err
+	}
+	if selectorExplicit && (!desiredFound || !reflect.DeepEqual(liveSelector, desiredSelector)) {
+		return errors.NewBadRequest("unsupported immutable workload selector change")
+	}
+	return unstructured.SetNestedMap(desired.Object, liveSelector, "spec", "selector")
+}
+
 // configureWorkload acts as a unified handler to apply Application specifications to the target Workload.
 // It determines the strategy based on the Workload Kind or Group.
 func (r *ApplicationReconciler) configureWorkload(u *unstructured.Unstructured, spec appsv1alpha1.ApplicationSpec, ordinalStart int32) error {
@@ -566,7 +599,7 @@ func (r *ApplicationReconciler) configureWorkload(u *unstructured.Unstructured, 
 	// If the Target Workload (e.g. Deployment) needs a `spec.selector`, we must provide it.
 	// We can try to extract labels from `templateMap` (which is `spec.template`) and create a selector.
 
-	labels, found, err := unstructured.NestedStringMap(u.Object, append(templatePath, "metadata", "labels")...)
+	templateLabels, found, err := unstructured.NestedStringMap(u.Object, append(templatePath, "metadata", "labels")...)
 	if err == nil && found {
 		// Try to set selector if it's missing or empty
 		currentSelector, found, _ := unstructured.NestedMap(u.Object, "spec", "selector")
@@ -580,14 +613,16 @@ func (r *ApplicationReconciler) configureWorkload(u *unstructured.Unstructured, 
 
 			// So we need to convert map[string]string to map[string]interface{}.
 			matchLabels := make(map[string]interface{})
-			for k, v := range labels {
-				matchLabels[k] = v
+			for _, key := range []string{labels.ApplicationIDKey, labels.WorkspaceIDKey, labels.ManagedByKey} {
+				if value := templateLabels[key]; value != "" {
+					matchLabels[key] = value
+				}
 			}
 
 			selector := map[string]interface{}{
 				"matchLabels": matchLabels,
 			}
-			if kind == "Deployment" || kind == "StatefulSet" || kind == "DaemonSet" || kind == "ReplicaSet" {
+			if len(matchLabels) > 0 && (kind == "Deployment" || kind == "StatefulSet" || kind == "DaemonSet" || kind == "ReplicaSet") {
 				if err := unstructured.SetNestedField(u.Object, selector, "spec", "selector"); err != nil {
 					return err
 				}
@@ -666,6 +701,96 @@ func (r *ApplicationReconciler) configureWorkload(u *unstructured.Unstructured, 
 	return nil
 }
 
+func configureImmutablePodIdentity(u *unstructured.Unstructured, identity map[string]string) error {
+	if identity[labels.ApplicationIDKey] == "" || identity[labels.WorkspaceIDKey] == "" {
+		return errors.NewBadRequest("application-id and workspace-id labels are required stable identities")
+	}
+	templatePath := []string{"spec", "template"}
+	if u.GetKind() == "CronJob" {
+		templatePath = []string{"spec", "jobTemplate", "spec", "template"}
+	}
+	current, _, err := unstructured.NestedStringMap(u.Object, append(templatePath, "metadata", "labels")...)
+	if err != nil {
+		return err
+	}
+	if current == nil {
+		current = map[string]string{}
+	}
+	delete(current, labels.ModuleIDKey)
+	delete(current, labels.ProjectIDKey)
+	for key, value := range identity {
+		current[key] = value
+	}
+	if err := unstructured.SetNestedStringMap(u.Object, current, append(templatePath, "metadata", "labels")...); err != nil {
+		return err
+	}
+	if u.GetKind() == "Deployment" || u.GetKind() == "StatefulSet" || u.GetKind() == "DaemonSet" || u.GetKind() == "ReplicaSet" {
+		selector, found, err := unstructured.NestedMap(u.Object, "spec", "selector")
+		if err != nil {
+			return err
+		}
+		if found && len(selector) > 0 {
+			matchLabels, _, err := unstructured.NestedStringMap(selector, "matchLabels")
+			if err != nil {
+				return err
+			}
+			for _, key := range []string{labels.ModuleIDKey, labels.ProjectIDKey} {
+				if _, exists := matchLabels[key]; exists {
+					return errors.NewBadRequest("unsupported live workload selector contains mutable ownership label " + key)
+				}
+			}
+			for key, value := range matchLabels {
+				current[key] = value
+			}
+			expressions, _, err := unstructured.NestedSlice(selector, "matchExpressions")
+			if err != nil {
+				return err
+			}
+			for _, raw := range expressions {
+				expression, ok := raw.(map[string]interface{})
+				if !ok || !selectorExpressionMatches(expression, current) {
+					return errors.NewBadRequest("unsupported live workload selector expression")
+				}
+			}
+			return unstructured.SetNestedStringMap(u.Object, current, append(templatePath, "metadata", "labels")...)
+		}
+		match := map[string]interface{}{}
+		for _, key := range []string{labels.ApplicationIDKey, labels.WorkspaceIDKey, labels.ManagedByKey} {
+			if value := identity[key]; value != "" {
+				match[key] = value
+			}
+		}
+		return unstructured.SetNestedField(u.Object, map[string]interface{}{"matchLabels": match}, "spec", "selector")
+	}
+	return nil
+}
+
+func selectorExpressionMatches(expression map[string]interface{}, labels map[string]string) bool {
+	key, _ := expression["key"].(string)
+	operator, _ := expression["operator"].(string)
+	value, exists := labels[key]
+	values, _, _ := unstructured.NestedStringSlice(expression, "values")
+	contains := false
+	for _, candidate := range values {
+		if value == candidate {
+			contains = true
+			break
+		}
+	}
+	switch operator {
+	case "In":
+		return exists && contains
+	case "NotIn":
+		return !exists || !contains
+	case "Exists":
+		return exists
+	case "DoesNotExist":
+		return !exists
+	default:
+		return false
+	}
+}
+
 // Helper to apply Job/CronJob attributes
 func applyJobAttributes(u *unstructured.Unstructured, attrs *appsv1alpha1.JobAttributes, fields ...string) error {
 	if attrs.Completions != nil {
@@ -710,10 +835,9 @@ func (r *ApplicationReconciler) reconcileResiliency(ctx context.Context, cli cli
 		return nil
 	}
 
-	var matchLabels map[string]string
-	var templateMap map[string]interface{}
-	if err := json.Unmarshal(app.Spec.Template.Raw, &templateMap); err == nil {
-		matchLabels, _, _ = unstructured.NestedStringMap(templateMap, "metadata", "labels")
+	matchLabels := labels.ImmutablePodIdentity(app)
+	if matchLabels == nil {
+		return errors.NewBadRequest("application-id and workspace-id labels are required for resiliency")
 	}
 
 	pdb := &policyv1.PodDisruptionBudget{

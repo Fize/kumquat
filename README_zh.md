@@ -19,6 +19,10 @@ Kumquat 是一个云原生多集群应用管理平台，旨在简化跨多个 Ku
 
 ## 架构
 
+API 使用 SQL 保存权威的业务期望状态和资源关系。`api/config/config.yaml`
+只将 SQLite 保留为显式的本地开发选项；Kubernetes 部署和 Kind Demo 从 Secret
+读取 MySQL 凭据，不挂载 SQLite 数据库。
+
 Kumquat 采用 Hub-Spoke 架构来高效管理多集群环境。
 
 ![架构图](docs/images/architecture.drawio.png)
@@ -31,7 +35,7 @@ Kumquat 采用 Hub-Spoke 架构来高效管理多集群环境。
 | **调度器** | Engine | 基于插件的 Filter/Score 架构多集群调度引擎 |
 | **Agent** | Engine | 运行在 Edge 集群上，维护隧道连接 |
 | **隧道服务器** | Engine | 基于 WebSocket 的反向隧道，用于 Edge 集群连接 |
-| **Portal** | Portal | 用户管理、认证授权 API |
+| **API** | API | 用户管理、认证授权 API |
 | **Kumctl** | Kumctl | 命令行运维工具 |
 
 ### 连接模式
@@ -47,10 +51,20 @@ Kumquat 采用 Hub-Spoke 架构来高效管理多集群环境。
 |------|------|------|
 | [engine/](engine/) | Engine | 核心系统：多集群应用分发、调度和管理 |
 | [armory/](armory/) | Armory | 基础 Docker 镜像构建（Alpine、Go、Node） |
-| [portal/](portal/) | Portal | 应用层 API：用户管理、认证授权（待建） |
-| [kumctl/](kumctl/) | Kumctl | 命令行工具（待建） |
+| [api/](api/) | API | 业务 API Gateway：关系/期望状态权威源，并将执行投影到 Engine |
+| [kumctl/](kumctl/) | Kumctl | 仅通过 API 交互的用户与 Agent 命令行入口 |
 
 ## 快速开始
+
+数据库集成测试和本地 Kind Demo 统一使用 MySQL 8。SQLite 只保留给
+`api/config/config.yaml` 所描述的显式本地开发模式。
+
+```bash
+make test-api-mysql
+make demo-up
+make demo-test
+make demo-down
+```
 
 ### 前提条件
 

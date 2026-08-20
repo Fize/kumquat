@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -104,6 +105,8 @@ func TestClusterReconciler_EdgeMode_Credentials(t *testing.T) {
 			Namespace: "default",
 			Annotations: map[string]string{
 				constants.AnnotationCredentialsToken: "test-token",
+				constants.AnnotationCredentialsCA:    base64.StdEncoding.EncodeToString([]byte("test-ca")),
+				constants.AnnotationCredentialsHash:  "sha256:test",
 				constants.AnnotationAPIServerURL:     "https://k8s.example.com",
 			},
 		},
@@ -160,7 +163,7 @@ func TestClusterReconciler_HubMode_AutoAccept(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "hub-no-secret"},
 		Spec: clusterv1alpha1.ManagedClusterSpec{
 			ConnectionMode: clusterv1alpha1.ClusterConnectionModeHub,
-			// No SecretRef - Hub clusters should be auto-accepted
+			APIServer:      clusterv1alpha1.LocalAPIServer,
 		},
 	}
 
@@ -173,7 +176,98 @@ func TestClusterReconciler_HubMode_AutoAccept(t *testing.T) {
 	var got clusterv1alpha1.ManagedCluster
 	cl.Get(ctx, types.NamespacedName{Name: cluster.Name}, &got)
 	assert.Equal(t, clusterv1alpha1.ClusterReady, got.Status.State)
-	assert.NotEmpty(t, got.Status.ID, "Hub cluster without SecretRef should be auto-accepted with an ID")
+	assert.NotEmpty(t, got.Status.ID, "explicit local Hub cluster should be auto-accepted with an ID")
+}
+
+func TestClusterReconciler_PersistsRotatedProjectedToken(t *testing.T) {
+	ctx := context.Background()
+	scheme := newClusterScheme(t)
+	cluster := &clusterv1alpha1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "edge-rotate", Annotations: map[string]string{
+			constants.AnnotationCredentialsToken: "token-b",
+			constants.AnnotationCredentialsCA:    base64.StdEncoding.EncodeToString([]byte("ca-b")),
+			constants.AnnotationAPIServerURL:     "https://edge.example.test:6443",
+			constants.AnnotationCredentialsHash:  "sha256:b",
+		}},
+		Spec: clusterv1alpha1.ManagedClusterSpec{ConnectionMode: clusterv1alpha1.ClusterConnectionModeEdge, SecretRef: &corev1.LocalObjectReference{Name: "cluster-creds-edge-rotate"}},
+	}
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "cluster-creds-edge-rotate", Namespace: "kumquat-system"}, Data: map[string][]byte{"token": []byte("token-a"), "caData": []byte("ca-a")}}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster, secret).WithStatusSubresource(cluster).Build()
+	r := &ClusterReconciler{Client: cl, Scheme: scheme, Namespace: "kumquat-system"}
+	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: cluster.Name}})
+	assert.NoError(t, err)
+	var gotSecret corev1.Secret
+	assert.NoError(t, cl.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}, &gotSecret))
+	assert.Equal(t, "token-b", string(gotSecret.Data["token"]))
+	var got clusterv1alpha1.ManagedCluster
+	assert.NoError(t, cl.Get(ctx, types.NamespacedName{Name: cluster.Name}, &got))
+	assert.Equal(t, "sha256:b", got.Annotations[constants.AnnotationCredentialsHash])
+	assert.Equal(t, "sha256:b", got.Annotations[constants.AnnotationCredentialsAppliedHash])
+	assert.Empty(t, got.Annotations[constants.AnnotationCredentialsToken])
+}
+
+func TestHandleEdgeCredentialsStaleAThenConsumesB(t *testing.T) {
+	ctx := context.Background()
+	scheme := newClusterScheme(t)
+	annotations := func(token, hash string) map[string]string {
+		return map[string]string{
+			constants.AnnotationCredentialsToken: token,
+			constants.AnnotationCredentialsCA:    base64.StdEncoding.EncodeToString([]byte("ca-" + token)),
+			constants.AnnotationAPIServerURL:     "https://edge.example.test:6443",
+			constants.AnnotationCredentialsHash:  hash,
+		}
+	}
+	staleA := &clusterv1alpha1.ManagedCluster{ObjectMeta: metav1.ObjectMeta{Name: "edge-cas", Annotations: annotations("token-a", "sha256:a")}, Spec: clusterv1alpha1.ManagedClusterSpec{ConnectionMode: clusterv1alpha1.ClusterConnectionModeEdge}}
+	liveB := staleA.DeepCopy()
+	liveB.Annotations = annotations("token-b", "sha256:b")
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "cluster-creds-edge-cas", Namespace: "kumquat-system"}, Data: map[string][]byte{"token": []byte("token-old")}}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(liveB, secret).WithStatusSubresource(liveB).Build()
+	r := &ClusterReconciler{Client: cl, Scheme: scheme, Namespace: "kumquat-system"}
+	assert.NoError(t, r.handleEdgeCredentials(ctx, staleA))
+	var afterStale corev1.Secret
+	assert.NoError(t, cl.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}, &afterStale))
+	assert.Equal(t, "token-old", string(afterStale.Data["token"]), "stale A must not overwrite the Secret")
+	assert.NoError(t, r.handleEdgeCredentials(ctx, liveB))
+	var finalSecret corev1.Secret
+	assert.NoError(t, cl.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}, &finalSecret))
+	assert.Equal(t, "token-b", string(finalSecret.Data["token"]))
+	assert.Equal(t, "sha256:b", finalSecret.Annotations[constants.AnnotationCredentialsAppliedHash])
+}
+
+func TestHandleEdgeCredentialsIncompleteDoesNotOverwriteSecret(t *testing.T) {
+	ctx := context.Background()
+	scheme := newClusterScheme(t)
+	cluster := &clusterv1alpha1.ManagedCluster{ObjectMeta: metav1.ObjectMeta{Name: "edge-incomplete", Annotations: map[string]string{
+		constants.AnnotationCredentialsToken: "token-b",
+		constants.AnnotationCredentialsHash:  "sha256:b",
+	}}, Spec: clusterv1alpha1.ManagedClusterSpec{ConnectionMode: clusterv1alpha1.ClusterConnectionModeEdge}}
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "cluster-creds-edge-incomplete", Namespace: "kumquat-system"}, Data: map[string][]byte{"token": []byte("token-a"), "caData": []byte("ca-a")}}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster, secret).WithStatusSubresource(cluster).Build()
+	r := &ClusterReconciler{Client: cl, Scheme: scheme, Namespace: "kumquat-system"}
+	assert.ErrorContains(t, r.handleEdgeCredentials(ctx, cluster), "incomplete")
+	var got corev1.Secret
+	assert.NoError(t, cl.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}, &got))
+	assert.Equal(t, "token-a", string(got.Data["token"]))
+	assert.Equal(t, "ca-a", string(got.Data["caData"]))
+}
+
+func TestClusterReconciler_HubMode_MissingRemoteSecretRejected(t *testing.T) {
+	ctx := context.Background()
+	scheme := newClusterScheme(t)
+	cluster := &clusterv1alpha1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "remote-no-secret"},
+		Spec: clusterv1alpha1.ManagedClusterSpec{
+			ConnectionMode: clusterv1alpha1.ClusterConnectionModeHub,
+			APIServer:      "https://remote.example.test:6443",
+		},
+	}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster).WithStatusSubresource(cluster).Build()
+	r := &ClusterReconciler{Client: cl, Scheme: scheme}
+	_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: cluster.Name}})
+	assert.NoError(t, err)
+	var got clusterv1alpha1.ManagedCluster
+	assert.NoError(t, cl.Get(ctx, types.NamespacedName{Name: cluster.Name}, &got))
+	assert.Equal(t, clusterv1alpha1.ClusterRejected, got.Status.State)
 }
 
 func TestClusterReconciler_DuplicateSecret(t *testing.T) {

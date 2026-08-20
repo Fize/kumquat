@@ -23,6 +23,8 @@ type TunnelServer interface {
 	Dialer(clientKey string) remotedialer.Dialer
 }
 
+var inClusterConfig = rest.InClusterConfig
+
 // ClientManager manages clients for clusters
 type ClientManager struct {
 	HubClient    client.Client
@@ -137,8 +139,18 @@ func (m *ClientManager) GetClient(ctx context.Context, clusterName string) (clie
 }
 
 func (m *ClientManager) buildHubModeConfig(ctx context.Context, cluster *clusterv1alpha1.ManagedCluster) (*rest.Config, error) {
-	if cluster.Spec.SecretRef == nil {
-		return nil, fmt.Errorf("missing secretRef for hub mode cluster %s", cluster.Name)
+	if cluster.Spec.APIServer == clusterv1alpha1.LocalAPIServer {
+		if cluster.Spec.SecretRef != nil && cluster.Spec.SecretRef.Name != "" {
+			return nil, fmt.Errorf("local hub %s must not specify secretRef", cluster.Name)
+		}
+		config, err := inClusterConfig()
+		if err != nil {
+			return nil, fmt.Errorf("build in-cluster config for local hub %s: %w", cluster.Name, err)
+		}
+		return config, nil
+	}
+	if cluster.Spec.SecretRef == nil || cluster.Spec.SecretRef.Name == "" {
+		return nil, fmt.Errorf("remote hub %s requires secretRef", cluster.Name)
 	}
 
 	cfg := &rest.Config{

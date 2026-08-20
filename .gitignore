@@ -26,7 +26,14 @@ engine/agent
 **/charts/*/charts/
 **/charts/*/requirements.lock
 
-# Portal
-portal/server
-portal/*.db
-portal/build/
+# API
+api/server
+api/*.db
+api/build/
+
+# Web UI is intentionally out of the current product scope; keep local UI
+# experiments and their generated dependencies out of commits.
+web/
+
+# Local Kind configuration
+kumquat-dev-kind.yaml

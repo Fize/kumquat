@@ -1,0 +1,269 @@
+openapi: 3.0.3
+info:
+  title: Kumquat API
+  version: 1.0.0
+  description: Northbound business API. Engine custom resources are internal execution projections.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /auth/login:
+    post:
+      security: []
+      operationId: login
+      requestBody: {$ref: '#/components/requestBodies/Login'}
+      responses: {'200': {$ref: '#/components/responses/Login'}, '400': {$ref: '#/components/responses/Error'}, '401': {$ref: '#/components/responses/Error'}}
+  /auth/register:
+    post:
+      security: []
+      operationId: register
+      requestBody: {$ref: '#/components/requestBodies/Register'}
+      responses: {'200': {$ref: '#/components/responses/User'}, '400': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}
+  /auth/me:
+    get: {operationId: getCurrentUser, responses: {'200': {$ref: '#/components/responses/User'}, '401': {$ref: '#/components/responses/Error'}, '404': {$ref: '#/components/responses/Error'}}}
+  /auth/change-password:
+    put:
+      operationId: changePassword
+      requestBody: {$ref: '#/components/requestBodies/ChangePassword'}
+      responses: {'200': {$ref: '#/components/responses/Message'}, '400': {$ref: '#/components/responses/Error'}, '403': {$ref: '#/components/responses/Error'}}
+  /users:
+    get:
+      operationId: listUsers
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/Size'}]
+      responses: {'200': {$ref: '#/components/responses/UserList'}}
+    post:
+      operationId: createUser
+      requestBody: {$ref: '#/components/requestBodies/UserCreate'}
+      responses: {'200': {$ref: '#/components/responses/User'}, '400': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}
+  /users/{id}:
+    parameters: [{$ref: '#/components/parameters/NumericID'}]
+    get: {operationId: getUser, responses: {'200': {$ref: '#/components/responses/User'}, '404': {$ref: '#/components/responses/Error'}}}
+    put:
+      operationId: updateUser
+      requestBody: {$ref: '#/components/requestBodies/UserUpdate'}
+      responses: {'200': {$ref: '#/components/responses/User'}, '400': {$ref: '#/components/responses/Error'}, '404': {$ref: '#/components/responses/Error'}}
+    delete: {operationId: deleteUser, responses: {'200': {$ref: '#/components/responses/Message'}, '403': {$ref: '#/components/responses/Error'}, '404': {$ref: '#/components/responses/Error'}}}
+  /roles:
+    get: {operationId: listRoles, responses: {'200': {$ref: '#/components/responses/RoleList'}}}
+  /roles/{id}:
+    parameters: [{$ref: '#/components/parameters/NumericID'}]
+    get: {operationId: getRole, responses: {'200': {$ref: '#/components/responses/Role'}, '404': {$ref: '#/components/responses/Error'}}}
+  /roles/{id}/permissions:
+    parameters: [{$ref: '#/components/parameters/NumericID'}]
+    get: {operationId: getRolePermissions, responses: {'200': {$ref: '#/components/responses/PermissionList'}, '404': {$ref: '#/components/responses/Error'}}}
+  /modules:
+    get: {operationId: listModules, responses: {'200': {$ref: '#/components/responses/ModuleList'}}}
+    post:
+      operationId: createModule
+      requestBody: {$ref: '#/components/requestBodies/ModuleCreate'}
+      responses: {'200': {$ref: '#/components/responses/Module'}, '400': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}
+  /modules/{id}:
+    parameters: [{$ref: '#/components/parameters/PublicID'}]
+    get: {operationId: getModule, responses: {'200': {$ref: '#/components/responses/Module'}, '404': {$ref: '#/components/responses/Error'}}}
+    put:
+      operationId: updateModule
+      requestBody: {$ref: '#/components/requestBodies/ModuleUpdate'}
+      responses: {'200': {$ref: '#/components/responses/Module'}, '400': {$ref: '#/components/responses/Error'}, '404': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}
+    delete: {operationId: deleteModule, responses: {'200': {$ref: '#/components/responses/Message'}, '404': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}}
+  /modules/{id}/children:
+    parameters: [{$ref: '#/components/parameters/PublicID'}]
+    get: {operationId: listModuleChildren, responses: {'200': {$ref: '#/components/responses/ModuleList'}, '404': {$ref: '#/components/responses/Error'}}}
+  /projects:
+    get:
+      operationId: listProjects
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/Size'}]
+      responses: {'200': {$ref: '#/components/responses/ProjectList'}}
+    post:
+      operationId: createProject
+      requestBody: {$ref: '#/components/requestBodies/ProjectCreate'}
+      responses: {'200': {$ref: '#/components/responses/Project'}, '400': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}
+  /projects/{id}:
+    parameters: [{$ref: '#/components/parameters/PublicID'}]
+    get: {operationId: getProject, responses: {'200': {$ref: '#/components/responses/Project'}, '404': {$ref: '#/components/responses/Error'}}}
+    put:
+      operationId: updateProject
+      requestBody: {$ref: '#/components/requestBodies/ProjectUpdate'}
+      responses: {'200': {$ref: '#/components/responses/Project'}, '400': {$ref: '#/components/responses/Error'}, '404': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}
+    delete: {operationId: deleteProject, responses: {'200': {$ref: '#/components/responses/Message'}, '404': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}}
+  /projects/module/{moduleId}:
+    parameters:
+      - {name: moduleId, in: path, required: true, schema: {$ref: '#/components/schemas/PublicID'}}
+      - {$ref: '#/components/parameters/Page'}
+      - {$ref: '#/components/parameters/Size'}
+    get: {operationId: listProjectsByModule, responses: {'200': {$ref: '#/components/responses/ProjectList'}, '404': {$ref: '#/components/responses/Error'}}}
+  /workspaces:
+    get: {operationId: listWorkspaces, responses: {'200': {$ref: '#/components/responses/ResourceList'}}}
+    post:
+      operationId: createWorkspace
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/WorkspaceCreate'}
+      responses: {'202': {$ref: '#/components/responses/Accepted'}, '400': {$ref: '#/components/responses/Error'}}
+  /workspaces/{id}:
+    parameters: [{$ref: '#/components/parameters/PublicID'}]
+    get: {operationId: getWorkspace, responses: {'200': {$ref: '#/components/responses/Resource'}, '404': {$ref: '#/components/responses/Error'}}}
+    put:
+      operationId: updateWorkspace
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/WorkspaceUpdate'}
+      responses: {'202': {$ref: '#/components/responses/Accepted'}, '400': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}
+    delete:
+      operationId: deleteWorkspace
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      responses: {'202': {$ref: '#/components/responses/Accepted'}, '404': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}
+  /workspaces/{id}/adopt-existing:
+    parameters: [{$ref: '#/components/parameters/PublicID'}]
+    post:
+      operationId: adoptExistingWorkspace
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/WorkspaceAdoption'}
+      responses: {'202': {$ref: '#/components/responses/Accepted'}, '400': {$ref: '#/components/responses/Error'}, '403': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}
+  /applications:
+    get: {operationId: listApplications, responses: {'200': {$ref: '#/components/responses/ResourceList'}}}
+    post:
+      operationId: createApplication
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/ApplicationCreate'}
+      responses: {'202': {$ref: '#/components/responses/Accepted'}, '400': {$ref: '#/components/responses/Error'}}
+  /applications/{id}:
+    parameters: [{$ref: '#/components/parameters/PublicID'}]
+    get: {operationId: getApplication, responses: {'200': {$ref: '#/components/responses/Resource'}, '404': {$ref: '#/components/responses/Error'}}}
+    put:
+      operationId: updateApplication
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/ApplicationUpdate'}
+      responses: {'202': {$ref: '#/components/responses/Accepted'}, '400': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}
+    delete:
+      operationId: deleteApplication
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      responses: {'202': {$ref: '#/components/responses/Accepted'}, '404': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}
+  /applications/{id}/adopt-existing:
+    parameters: [{$ref: '#/components/parameters/PublicID'}]
+    post:
+      operationId: adoptExistingApplication
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/ApplicationAdoption'}
+      responses: {'202': {$ref: '#/components/responses/Accepted'}, '400': {$ref: '#/components/responses/Error'}, '403': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}
+  /clusters:
+    get: {operationId: listClusters, responses: {'200': {$ref: '#/components/responses/ResourceList'}}}
+  /clusters/{id}:
+    parameters: [{$ref: '#/components/parameters/PublicID'}]
+    get: {operationId: getCluster, responses: {'200': {$ref: '#/components/responses/Resource'}, '404': {$ref: '#/components/responses/Error'}}}
+  /clusters/{id}/adopt:
+    parameters: [{$ref: '#/components/parameters/PublicID'}]
+    post:
+      operationId: adoptCluster
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      responses: {'202': {$ref: '#/components/responses/Accepted'}, '404': {$ref: '#/components/responses/Error'}, '409': {$ref: '#/components/responses/Error'}}
+  /operations/{id}:
+    parameters: [{$ref: '#/components/parameters/PublicID'}]
+    get: {operationId: getOperation, responses: {'200': {$ref: '#/components/responses/Operation'}, '404': {$ref: '#/components/responses/Error'}}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    PublicID: {name: id, in: path, required: true, schema: {$ref: '#/components/schemas/PublicID'}}
+    NumericID: {name: id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}
+    IdempotencyKey: {name: Idempotency-Key, in: header, required: false, schema: {type: string, minLength: 1, maxLength: 128}}
+    Page: {name: page, in: query, required: false, schema: {type: integer, minimum: 1, default: 1}}
+    Size: {name: size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+  requestBodies:
+    Login: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/LoginRequest'}}}}
+    Register: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RegisterRequest'}}}}
+    ChangePassword: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ChangePasswordRequest'}}}}
+    UserCreate: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/UserCreate'}}}}
+    UserUpdate: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/UserUpdate'}}}}
+    ModuleCreate: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ModuleCreate'}}}}
+    ModuleUpdate: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ModuleUpdate'}}}}
+    ProjectCreate: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectCreate'}}}}
+    ProjectUpdate: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectUpdate'}}}}
+    WorkspaceCreate: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/WorkspaceCreate'}}}}
+    WorkspaceUpdate: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/WorkspaceUpdate'}}}}
+    ApplicationCreate: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApplicationCreate'}}}}
+    ApplicationUpdate: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApplicationUpdate'}}}}
+    WorkspaceAdoption: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/WorkspaceAdoption'}}}}
+    ApplicationAdoption: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApplicationAdoption'}}}}
+  schemas:
+    PublicID: {type: string, minLength: 3, maxLength: 40, pattern: '^[a-z]+_[a-f0-9]+$'}
+    LoginRequest: {type: object, additionalProperties: false, required: [username, password], properties: {username: {type: string}, password: {type: string, format: password}}}
+    RegisterRequest: {type: object, additionalProperties: false, required: [username, email, password], properties: {username: {type: string, minLength: 3, maxLength: 32}, email: {type: string, format: email}, password: {type: string, format: password, minLength: 6, maxLength: 32}, nickname: {type: string}}}
+    ChangePasswordRequest: {type: object, additionalProperties: false, required: [oldPassword, newPassword], properties: {oldPassword: {type: string, format: password}, newPassword: {type: string, format: password, minLength: 6, maxLength: 32}}}
+    UserCreate: {type: object, additionalProperties: false, required: [username, email, password, role_id], properties: {username: {type: string, minLength: 3, maxLength: 32}, email: {type: string, format: email}, password: {type: string, minLength: 6, maxLength: 32}, nickname: {type: string}, role_id: {type: integer, minimum: 1}, module_id: {type: integer, minimum: 1, nullable: true}}}
+    UserUpdate: {type: object, additionalProperties: false, properties: {nickname: {type: string}, role_id: {type: integer, minimum: 1}, module_id: {type: integer, minimum: 1, nullable: true}}}
+    ModuleCreate: {type: object, additionalProperties: false, required: [name], properties: {name: {type: string}, parentId: {$ref: '#/components/schemas/PublicID'}, sort: {type: integer}}}
+    ModuleUpdate: {type: object, additionalProperties: false, properties: {name: {type: string}, parentId: {$ref: '#/components/schemas/PublicID'}, sort: {type: integer}}}
+    ProjectConfig: {type: object, additionalProperties: {oneOf: [{type: string}, {type: number}, {type: integer}, {type: boolean}]}}
+    ProjectCreate: {type: object, additionalProperties: false, required: [name, moduleId], properties: {name: {type: string}, moduleId: {$ref: '#/components/schemas/PublicID'}, config: {$ref: '#/components/schemas/ProjectConfig'}}}
+    ProjectUpdate: {type: object, additionalProperties: false, properties: {name: {type: string}, moduleId: {$ref: '#/components/schemas/PublicID'}, config: {$ref: '#/components/schemas/ProjectConfig'}}}
+    WorkloadRef: {type: object, additionalProperties: false, required: [apiVersion, kind], properties: {apiVersion: {type: string}, kind: {type: string, enum: [Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob]}}}
+    SecretKeyRef: {type: object, additionalProperties: false, required: [secretName, key], properties: {secretName: {type: string, minLength: 1}, key: {type: string, minLength: 1}, optional: {type: boolean}}}
+    EnvironmentVariable: {type: object, additionalProperties: false, required: [name, valueFrom], properties: {name: {type: string}, valueFrom: {$ref: '#/components/schemas/SecretKeyRef'}}}
+    PolicyOverride: {type: object, additionalProperties: false, properties: {clusterSelector: {$ref: '#/components/schemas/LabelSelector'}, image: {type: string}, env: {type: array, items: {$ref: '#/components/schemas/EnvironmentVariable'}}, resources: {type: object}, command: {type: array, items: {type: string}}, args: {type: array, items: {type: string}}}}
+    Container: {type: object, additionalProperties: false, required: [name, image], properties: {name: {type: string}, image: {type: string}, command: {type: array, items: {type: string}}, args: {type: array, items: {type: string}}, env: {type: array, items: {$ref: '#/components/schemas/EnvironmentVariable'}}}}
+    PodTemplate: {type: object, additionalProperties: false, required: [containers], properties: {labels: {type: object, additionalProperties: {type: string}}, containers: {type: array, minItems: 1, items: {$ref: '#/components/schemas/Container'}}}}
+    LabelSelectorRequirement: {type: object, additionalProperties: false, required: [key, operator], properties: {key: {type: string}, operator: {type: string, enum: [In, NotIn, Exists, DoesNotExist]}, values: {type: array, items: {type: string}}}}
+    LabelSelector: {type: object, additionalProperties: false, properties: {matchLabels: {type: object, additionalProperties: {type: string}}, matchExpressions: {type: array, items: {$ref: '#/components/schemas/LabelSelectorRequirement'}}}}
+    JobAttributes: {type: object, additionalProperties: false, properties: {completions: {type: integer, format: int32}, parallelism: {type: integer, format: int32}, backoffLimit: {type: integer, format: int32}, ttlSecondsAfterFinished: {type: integer, format: int32}, successfulJobsHistoryLimit: {type: integer, format: int32}, failedJobsHistoryLimit: {type: integer, format: int32}}}
+    Toleration: {type: object, additionalProperties: false, properties: {key: {type: string}, operator: {type: string}, value: {type: string}, effect: {type: string}, tolerationSeconds: {type: integer, format: int64}}}
+    ResiliencyPolicy: {type: object, additionalProperties: false, properties: {minAvailable: {oneOf: [{type: integer}, {type: string}]}, maxUnavailable: {oneOf: [{type: integer}, {type: string}]}}}
+    ApplicationDesired: {type: object, additionalProperties: false, required: [workload, template], properties: {workload: {$ref: '#/components/schemas/WorkloadRef'}, selector: {$ref: '#/components/schemas/LabelSelector'}, replicas: {type: integer, format: int32, minimum: 0}, template: {$ref: '#/components/schemas/PodTemplate'}, schedule: {type: string}, suspend: {type: boolean}, jobAttributes: {$ref: '#/components/schemas/JobAttributes'}, clusterAffinity: {type: object}, clusterTolerations: {type: array, items: {$ref: '#/components/schemas/Toleration'}}, overrides: {type: array, items: {$ref: '#/components/schemas/PolicyOverride'}}, resiliency: {$ref: '#/components/schemas/ResiliencyPolicy'}, rolloutStrategy: {type: object}}}
+    WorkspaceDesired: {type: object, additionalProperties: false, properties: {namespace: {type: string}, clusterMatchLabels: {type: object, additionalProperties: {type: string}}, clusterSelector: {$ref: '#/components/schemas/LabelSelector'}, resourceConstraints: {type: object}}}
+    WorkspaceDesiredState: {type: object, additionalProperties: false, required: [workspace], properties: {workspace: {$ref: '#/components/schemas/WorkspaceDesired'}}}
+    ApplicationDesiredState: {type: object, additionalProperties: false, required: [application], properties: {application: {$ref: '#/components/schemas/ApplicationDesired'}}}
+    WorkspaceCreate: {type: object, additionalProperties: false, required: [name, projectId, desired], properties: {name: {type: string}, projectId: {$ref: '#/components/schemas/PublicID'}, desired: {$ref: '#/components/schemas/WorkspaceDesiredState'}}}
+    WorkspaceUpdate: {type: object, additionalProperties: false, properties: {name: {type: string}, projectId: {$ref: '#/components/schemas/PublicID'}, desired: {$ref: '#/components/schemas/WorkspaceDesiredState'}}}
+    ApplicationCreate: {type: object, additionalProperties: false, required: [name, workspaceId, desired], properties: {name: {type: string}, workspaceId: {$ref: '#/components/schemas/PublicID'}, desired: {$ref: '#/components/schemas/ApplicationDesiredState'}}}
+    ApplicationUpdate: {type: object, additionalProperties: false, properties: {name: {type: string}, workspaceId: {$ref: '#/components/schemas/PublicID'}, desired: {$ref: '#/components/schemas/ApplicationDesiredState'}}}
+    WorkspaceAdoption: {type: object, additionalProperties: false, required: [projectId], properties: {projectId: {$ref: '#/components/schemas/PublicID'}}}
+    ApplicationAdoption: {type: object, additionalProperties: false, required: [workspaceId], properties: {workspaceId: {$ref: '#/components/schemas/PublicID'}}}
+    ClusterApplicationStatus: {type: object, additionalProperties: false, required: [clusterName, phase, replicas, readyReplicas], properties: {clusterName: {type: string}, phase: {type: string}, replicas: {type: integer, format: int32}, readyReplicas: {type: integer, format: int32}, message: {type: string}}}
+    ApplicationObserved: {type: object, additionalProperties: false, required: [schedulingPhase, healthPhase, globalReplicas, globalReadyReplicas], properties: {schedulingPhase: {type: string}, healthPhase: {type: string}, globalReplicas: {type: integer, format: int32}, globalReadyReplicas: {type: integer, format: int32}, clusters: {type: array, items: {$ref: '#/components/schemas/ClusterApplicationStatus'}}}}
+    WorkspaceClusterError: {type: object, additionalProperties: false, required: [name, message, lastTransitionTime], properties: {name: {type: string}, message: {type: string}, lastTransitionTime: {type: string, format: date-time}}}
+    WorkspaceObserved: {type: object, additionalProperties: false, required: [ready], properties: {ready: {type: boolean}, appliedClusters: {type: array, items: {type: string}}, failedClusters: {type: array, items: {$ref: '#/components/schemas/WorkspaceClusterError'}}}}
+    ClusterObserved: {type: object, additionalProperties: false, required: [connectionMode, state], properties: {connectionMode: {type: string, enum: [Edge]}, state: {type: string}, kubernetesVersion: {type: string}, agentVersion: {type: string}, lastKeepAliveTime: {type: string, format: date-time, nullable: true}}}
+    ObservedState: {type: object, additionalProperties: false, properties: {application: {$ref: '#/components/schemas/ApplicationObserved'}, workspace: {$ref: '#/components/schemas/WorkspaceObserved'}, cluster: {$ref: '#/components/schemas/ClusterObserved'}}}
+    EmptyDesiredState: {type: object, additionalProperties: false, maxProperties: 0}
+    ResourceBase: {type: object, required: [id, kind, name, observed, syncState, source], properties: {id: {$ref: '#/components/schemas/PublicID'}, kind: {type: string, enum: [workspace, application, cluster]}, name: {type: string}, parentId: {$ref: '#/components/schemas/PublicID'}, projectId: {$ref: '#/components/schemas/PublicID'}, moduleId: {$ref: '#/components/schemas/PublicID'}, observed: {$ref: '#/components/schemas/ObservedState'}, observedAt: {type: string, format: date-time}, syncState: {type: string, enum: [pending, retrying, synced, failed, deleting, stale]}, source: {type: string, enum: [api, agent, engine]}, state: {type: string, enum: [discovered, adopting, adopted, archived, unassigned]}}}
+    WorkspaceResource: {allOf: [{$ref: '#/components/schemas/ResourceBase'}, {type: object, required: [desired], properties: {kind: {type: string, enum: [workspace]}, desired: {$ref: '#/components/schemas/WorkspaceDesiredState'}}}]}
+    ApplicationResource: {allOf: [{$ref: '#/components/schemas/ResourceBase'}, {type: object, required: [desired], properties: {kind: {type: string, enum: [application]}, desired: {$ref: '#/components/schemas/ApplicationDesiredState'}}}]}
+    ClusterResource: {allOf: [{$ref: '#/components/schemas/ResourceBase'}, {type: object, required: [desired], properties: {kind: {type: string, enum: [cluster]}, desired: {$ref: '#/components/schemas/EmptyDesiredState'}}}]}
+    Resource: {oneOf: [{$ref: '#/components/schemas/WorkspaceResource'}, {$ref: '#/components/schemas/ApplicationResource'}, {$ref: '#/components/schemas/ClusterResource'}], discriminator: {propertyName: kind}}
+    Operation: {type: object, additionalProperties: false, required: [id, resourceId, action, state, createdAt, updatedAt], properties: {id: {$ref: '#/components/schemas/PublicID'}, resourceId: {$ref: '#/components/schemas/PublicID'}, action: {type: string, enum: [apply, delete, adopt, adopt-existing]}, state: {type: string, enum: [pending, retrying, succeeded, failed]}, error: {type: string}, createdAt: {type: string, format: date-time}, updatedAt: {type: string, format: date-time}}}
+    ErrorEnvelope: {type: object, additionalProperties: false, required: [code, message], properties: {code: {type: integer}, message: {type: string}}}
+    RoleDTO: {type: object, additionalProperties: false, required: [id, name, created_at, updated_at], properties: {id: {type: integer, format: int64}, name: {type: string}, created_at: {type: string, format: date-time}, updated_at: {type: string, format: date-time}}}
+    ModuleDTO: {type: object, additionalProperties: false, required: [id, name, level, sort, path, created_at, updated_at], properties: {id: {$ref: '#/components/schemas/PublicID'}, name: {type: string}, parent_id: {$ref: '#/components/schemas/PublicID'}, level: {type: integer}, sort: {type: integer}, path: {type: string}, children: {type: array, items: {$ref: '#/components/schemas/ModuleDTO'}}, created_at: {type: string, format: date-time}, updated_at: {type: string, format: date-time}}}
+    UserDTO: {type: object, additionalProperties: false, required: [id, username, email, nickname, role_id, created_at, updated_at], properties: {id: {type: integer, format: int64}, username: {type: string}, email: {type: string, format: email}, nickname: {type: string}, role_id: {type: integer, format: int64}, role: {$ref: '#/components/schemas/RoleDTO'}, module_id: {type: integer, format: int64, nullable: true}, module: {$ref: '#/components/schemas/ModuleDTO'}, created_at: {type: string, format: date-time}, updated_at: {type: string, format: date-time}}}
+    ProjectDTO: {type: object, additionalProperties: false, required: [id, name, module_id, created_at, updated_at], properties: {id: {$ref: '#/components/schemas/PublicID'}, name: {type: string}, module_id: {$ref: '#/components/schemas/PublicID'}, module: {$ref: '#/components/schemas/ModuleDTO'}, config: {$ref: '#/components/schemas/ProjectConfig'}, created_at: {type: string, format: date-time}, updated_at: {type: string, format: date-time}}}
+    PermissionDTO: {type: object, additionalProperties: false, required: [resource, action, effect], properties: {resource: {type: string}, action: {type: string}, effect: {type: string, enum: [allow, deny]}}}
+    Pagination: {type: object, additionalProperties: false, required: [total, page, size, list], properties: {total: {type: integer, format: int64}, page: {type: integer}, size: {type: integer}, list: {type: array, items: {type: object}}}}
+    MessageEnvelope: {type: object, additionalProperties: false, required: [code, message], properties: {code: {type: integer, enum: [0]}, message: {type: string}}}
+    LoginEnvelope: {type: object, additionalProperties: false, required: [code, message, data], properties: {code: {type: integer, enum: [0]}, message: {type: string}, data: {type: object, additionalProperties: false, required: [token, user], properties: {token: {type: string}, user: {$ref: '#/components/schemas/UserDTO'}}}}}
+    UserEnvelope: {type: object, additionalProperties: false, required: [code, message, data], properties: {code: {type: integer, enum: [0]}, message: {type: string}, data: {$ref: '#/components/schemas/UserDTO'}}}
+    RoleEnvelope: {type: object, additionalProperties: false, required: [code, message, data], properties: {code: {type: integer, enum: [0]}, message: {type: string}, data: {$ref: '#/components/schemas/RoleDTO'}}}
+    ModuleEnvelope: {type: object, additionalProperties: false, required: [code, message, data], properties: {code: {type: integer, enum: [0]}, message: {type: string}, data: {$ref: '#/components/schemas/ModuleDTO'}}}
+    ProjectEnvelope: {type: object, additionalProperties: false, required: [code, message, data], properties: {code: {type: integer, enum: [0]}, message: {type: string}, data: {$ref: '#/components/schemas/ProjectDTO'}}}
+    UserListEnvelope: {type: object, additionalProperties: false, required: [code, message, data], properties: {code: {type: integer, enum: [0]}, message: {type: string}, data: {allOf: [{$ref: '#/components/schemas/Pagination'}, {type: object, properties: {list: {type: array, items: {$ref: '#/components/schemas/UserDTO'}}}}]}}}
+    ProjectListEnvelope: {type: object, additionalProperties: false, required: [code, message, data], properties: {code: {type: integer, enum: [0]}, message: {type: string}, data: {allOf: [{$ref: '#/components/schemas/Pagination'}, {type: object, properties: {list: {type: array, items: {$ref: '#/components/schemas/ProjectDTO'}}}}]}}}
+    RoleListEnvelope: {type: object, additionalProperties: false, required: [code, message, data], properties: {code: {type: integer, enum: [0]}, message: {type: string}, data: {type: array, items: {$ref: '#/components/schemas/RoleDTO'}}}}
+    ModuleListEnvelope: {type: object, additionalProperties: false, required: [code, message, data], properties: {code: {type: integer, enum: [0]}, message: {type: string}, data: {type: array, items: {$ref: '#/components/schemas/ModuleDTO'}}}}
+    PermissionListEnvelope: {type: object, additionalProperties: false, required: [code, message, data], properties: {code: {type: integer, enum: [0]}, message: {type: string}, data: {type: object, additionalProperties: false, required: [permissions], properties: {permissions: {type: array, items: {$ref: '#/components/schemas/PermissionDTO'}}}}}}
+    ResourceEnvelope: {type: object, additionalProperties: false, required: [code, message, data], properties: {code: {type: integer, enum: [0]}, message: {type: string}, data: {$ref: '#/components/schemas/Resource'}}}
+    ResourceListEnvelope: {type: object, additionalProperties: false, required: [code, message, data], properties: {code: {type: integer, enum: [0]}, message: {type: string}, data: {type: object, additionalProperties: false, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/Resource'}}}}}}
+    OperationEnvelope: {type: object, additionalProperties: false, required: [code, message, data], properties: {code: {type: integer, enum: [0]}, message: {type: string}, data: {$ref: '#/components/schemas/Operation'}}}
+  responses:
+    Login: {description: Login, content: {application/json: {schema: {$ref: '#/components/schemas/LoginEnvelope'}}}}
+    User: {description: User, content: {application/json: {schema: {$ref: '#/components/schemas/UserEnvelope'}}}}
+    UserList: {description: Users, content: {application/json: {schema: {$ref: '#/components/schemas/UserListEnvelope'}}}}
+    Role: {description: Role, content: {application/json: {schema: {$ref: '#/components/schemas/RoleEnvelope'}}}}
+    RoleList: {description: Roles, content: {application/json: {schema: {$ref: '#/components/schemas/RoleListEnvelope'}}}}
+    PermissionList: {description: Permissions, content: {application/json: {schema: {$ref: '#/components/schemas/PermissionListEnvelope'}}}}
+    Module: {description: Module, content: {application/json: {schema: {$ref: '#/components/schemas/ModuleEnvelope'}}}}
+    ModuleList: {description: Modules, content: {application/json: {schema: {$ref: '#/components/schemas/ModuleListEnvelope'}}}}
+    Project: {description: Project, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectEnvelope'}}}}
+    ProjectList: {description: Projects, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectListEnvelope'}}}}
+    Message: {description: Message, content: {application/json: {schema: {$ref: '#/components/schemas/MessageEnvelope'}}}}
+    Resource: {description: Resource, content: {application/json: {schema: {$ref: '#/components/schemas/ResourceEnvelope'}}}}
+    ResourceList: {description: Resource list, content: {application/json: {schema: {$ref: '#/components/schemas/ResourceListEnvelope'}}}}
+    Operation: {description: Operation, content: {application/json: {schema: {$ref: '#/components/schemas/OperationEnvelope'}}}}
+    Accepted: {description: Accepted operation, content: {application/json: {schema: {$ref: '#/components/schemas/OperationEnvelope'}}}}
+    Error: {description: Error, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}

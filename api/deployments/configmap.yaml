@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  namespace: kumquat-system
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: kumquat
+data:
+  config.yaml: |
+    server:
+      bindAddr: ":8080"
+      metrics:
+        enabled: true
+        serviceName: api
+        path: /metrics
+        port: 9090
+      trace:
+        enabled: true
+        serviceName: api
+        stdout: true
+
+    log:
+      level: info
+      format: json
+
+    custom:
+      jwt:
+        secret: ""
+        expire_duration: 24h
+        reset_expire_duration: 10m
+
+      security:
+        allowed_email_domains: []
+        allowed_origins:
+          - "*"
+
+      kubernetes:
+        kubeconfig_path: ""
+        master_url: ""

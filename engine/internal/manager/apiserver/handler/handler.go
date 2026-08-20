@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -41,18 +42,16 @@ func NewRemoteDialerServer(c client.Client) *remotedialer.Server {
 		}
 		token := parts[1]
 
-		if !validateBootstrapToken(c, token) {
+		claimedCluster, valid := validateBootstrapToken(c, token)
+		if !valid {
 			logger.Info("Invalid bootstrap token", "remoteAddr", req.RemoteAddr)
 			return "", false, fmt.Errorf("invalid bootstrap token")
 		}
 
-		clusterName := req.Header.Get("X-Remotedialer-ID")
-		if clusterName == "" {
-			clusterName = req.Header.Get("X-Kumquat-Cluster-Name")
-		}
-		if clusterName == "" {
+		clusterName, err := authorizeClusterHeaders(req.Header, claimedCluster)
+		if err != nil {
 			logger.Info("Missing cluster name", "remoteAddr", req.RemoteAddr)
-			return "", false, fmt.Errorf("cluster name required")
+			return "", false, err
 		}
 
 		cluster := &clusterv1alpha1.ManagedCluster{}
@@ -71,6 +70,18 @@ func NewRemoteDialerServer(c client.Client) *remotedialer.Server {
 	}
 
 	return remotedialer.New(authorizer, errorWriter)
+}
+
+func authorizeClusterHeaders(headers http.Header, claimedCluster string) (string, error) {
+	remoteDialerID := headers.Get("X-Remotedialer-ID")
+	clusterName := headers.Get("X-Kumquat-Cluster-Name")
+	if clusterName == "" || remoteDialerID == "" {
+		return "", fmt.Errorf("cluster name required")
+	}
+	if clusterName != remoteDialerID || clusterName != claimedCluster {
+		return "", fmt.Errorf("cluster identity mismatch")
+	}
+	return clusterName, nil
 }
 
 func InstallHandler(m *mux.PathRecorderMux, c client.Client, server *remotedialer.Server) {
@@ -142,12 +153,14 @@ func InstallHandler(m *mux.PathRecorderMux, c client.Client, server *remotediale
 				return d(ctx, network, addr)
 			}
 
-			tlsConfig := &tls.Config{InsecureSkipVerify: true}
+			tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: u.Hostname()}
 			if len(caData) > 0 {
 				caPool := x509.NewCertPool()
 				if caPool.AppendCertsFromPEM(caData) {
 					tlsConfig = &tls.Config{
-						RootCAs: caPool,
+						RootCAs:    caPool,
+						ServerName: u.Hostname(),
+						MinVersion: tls.VersionTLS12,
 					}
 				}
 			}
@@ -177,7 +190,7 @@ func InstallHandler(m *mux.PathRecorderMux, c client.Client, server *remotediale
 			client := &http.Client{
 				Timeout: 2 * time.Second,
 				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+					TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
 				},
 			}
 
@@ -191,7 +204,7 @@ func InstallHandler(m *mux.PathRecorderMux, c client.Client, server *remotediale
 							req.URL.Host = peerIP + ":443"
 						},
 						Transport: &http.Transport{
-							TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+							TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
 						},
 					}
 					rp.ServeHTTP(w, r)
@@ -222,13 +235,20 @@ func getPeers(c client.Client, namespace, serviceName string) ([]string, error) 
 	return ips, nil
 }
 
-func validateBootstrapToken(c client.Client, token string) bool {
+const bootstrapClusterAnnotation = "cluster.kumquat.io/bootstrap-cluster-name"
+
+func bootstrapTokenIDForCluster(clusterName string) string {
+	sum := sha256.Sum256([]byte(clusterName))
+	return fmt.Sprintf("%x", sum)[:6]
+}
+
+func validateBootstrapToken(c client.Client, token string) (string, bool) {
 	if !bootstraputil.IsValidBootstrapToken(token) {
-		return false
+		return "", false
 	}
 	parts := strings.Split(token, ".")
 	if len(parts) != 2 {
-		return false
+		return "", false
 	}
 	tokenID := parts[0]
 	tokenSecret := parts[1]
@@ -237,30 +257,41 @@ func validateBootstrapToken(c client.Client, token string) bool {
 	secret := &corev1.Secret{}
 	key := client.ObjectKey{Name: secretName, Namespace: "kube-system"}
 	if err := c.Get(context.Background(), key, secret); err != nil {
-		return false
+		return "", false
 	}
 
 	if secret.Type != bootstrapapi.SecretTypeBootstrapToken {
-		return false
+		return "", false
 	}
 
 	if string(secret.Data[bootstrapapi.BootstrapTokenSecretKey]) != tokenSecret {
-		return false
+		return "", false
 	}
 
 	if string(secret.Data[bootstrapapi.BootstrapTokenUsageAuthentication]) != "true" {
-		return false
+		return "", false
+	}
+	clusterName := secret.Annotations[bootstrapClusterAnnotation]
+	if clusterName == "" {
+		return "", false
+	}
+	if tokenID != bootstrapTokenIDForCluster(clusterName) {
+		return "", false
+	}
+	expectedGroup := "system:bootstrappers:engine-agent:" + clusterName
+	if string(secret.Data[bootstrapapi.BootstrapTokenExtraGroupsKey]) != expectedGroup {
+		return "", false
 	}
 
 	if expiration, ok := secret.Data[bootstrapapi.BootstrapTokenExpirationKey]; ok {
 		expTime, err := time.Parse(time.RFC3339, string(expiration))
 		if err != nil {
-			return false
+			return "", false
 		}
 		if time.Now().After(expTime) {
-			return false
+			return "", false
 		}
 	}
 
-	return true
+	return clusterName, true
 }

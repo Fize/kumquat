@@ -9,6 +9,9 @@ import (
 type ClusterState string
 
 const (
+	// LocalAPIServer explicitly identifies the Kubernetes API hosting Engine.
+	LocalAPIServer = "in-cluster://"
+
 	// ClusterPending means the cluster is waiting for approval
 	ClusterPending ClusterState = "Pending"
 	// ClusterReady means the cluster has been approved and is connected/ready
@@ -30,6 +33,7 @@ const (
 )
 
 // ManagedClusterSpec defines the desired state of Cluster
+// +kubebuilder:validation:XValidation:rule="self.connectionMode != 'Hub' || self.apiServer == 'in-cluster://' || has(self.secretRef)",message="remote Hub clusters require secretRef; use apiServer in-cluster:// only for the Engine host cluster"
 type ManagedClusterSpec struct {
 	// ConnectionMode specifies how the cluster connects to the manager
 	// +kubebuilder:default=Hub

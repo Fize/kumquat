@@ -1,4 +1,4 @@
-.PHONY: build test clean help engine armory
+.PHONY: build test test-api-mysql demo-up demo-test demo-down clean help engine armory
 
 help: ## Show this help
 	@echo "Usage: make [target]"
@@ -11,6 +11,18 @@ engine: ## Build engine
 
 test: ## Run engine tests
 	$(MAKE) -C engine test
+
+test-api-mysql: ## Run all API tests against an isolated Docker MySQL 8
+	$(MAKE) -C api test-mysql
+
+demo-up: ## Build and deploy the local Kind demo with MySQL
+	./demo/demo.sh up
+
+demo-test: ## Run strict API-to-Engine Kind E2E
+	./demo/demo.sh test
+
+demo-down: ## Remove only demo-owned Kind clusters and network
+	./demo/demo.sh down
 
 armory: ## Build all base images
 	$(MAKE) -C armory all

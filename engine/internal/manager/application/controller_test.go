@@ -9,8 +9,10 @@ import (
 	"github.com/fize/kumquat/engine/internal/manager/cluster"
 	appsv1alpha1 "github.com/fize/kumquat/engine/pkg/apis/apps/v1alpha1"
 	clusterv1alpha1 "github.com/fize/kumquat/engine/pkg/apis/storage/v1alpha1"
+	kumlabels "github.com/fize/kumquat/engine/pkg/util/labels"
 	"github.com/rancher/remotedialer"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -34,6 +36,86 @@ func setupScheme() *runtime.Scheme {
 	_ = appsv1.AddToScheme(scheme)
 	_ = policyv1.AddToScheme(scheme)
 	return scheme
+}
+
+func TestConfigureImmutablePodIdentityExcludesMutableOwnership(t *testing.T) {
+	u := &unstructured.Unstructured{}
+	u.SetKind("Deployment")
+	spec := appsv1alpha1.ApplicationSpec{Template: runtime.RawExtension{Raw: []byte(`{"metadata":{"labels":{"user":"kept","kumquat.io/module-id":"old-module","kumquat.io/project-id":"old-project"}},"spec":{"containers":[{"name":"app","image":"nginx"}]}}`)}}
+	r := &ApplicationReconciler{}
+	assert.NoError(t, r.configureWorkload(u, spec, 0))
+	identity := map[string]string{kumlabels.ApplicationIDKey: "app_1", kumlabels.WorkspaceIDKey: "ws_1", kumlabels.ManagedByKey: kumlabels.ManagedByValue}
+	assert.NoError(t, configureImmutablePodIdentity(u, identity))
+	templateLabels, _, err := unstructured.NestedStringMap(u.Object, "spec", "template", "metadata", "labels")
+	assert.NoError(t, err)
+	assert.Equal(t, "kept", templateLabels["user"])
+	assert.NotContains(t, templateLabels, kumlabels.ModuleIDKey)
+	assert.NotContains(t, templateLabels, kumlabels.ProjectIDKey)
+	selector, _, err := unstructured.NestedStringMap(u.Object, "spec", "selector", "matchLabels")
+	assert.NoError(t, err)
+	assert.Equal(t, identity, selector)
+}
+
+func TestConfigureImmutablePodIdentityRejectsMissingStableIDs(t *testing.T) {
+	u := &unstructured.Unstructured{Object: map[string]interface{}{"spec": map[string]interface{}{"template": map[string]interface{}{}}}}
+	u.SetKind("Deployment")
+	err := configureImmutablePodIdentity(u, map[string]string{kumlabels.ManagedByKey: kumlabels.ManagedByValue})
+	require.ErrorContains(t, err, "application-id and workspace-id")
+}
+
+func TestConfigureImmutablePodIdentityPreservesExistingSelector(t *testing.T) {
+	u := &unstructured.Unstructured{Object: map[string]interface{}{
+		"kind": "Deployment",
+		"spec": map[string]interface{}{
+			"selector": map[string]interface{}{"matchLabels": map[string]interface{}{"app": "stable"}},
+			"template": map[string]interface{}{"metadata": map[string]interface{}{"labels": map[string]interface{}{}}},
+		},
+	}}
+	u.SetKind("Deployment")
+	identity := map[string]string{kumlabels.ApplicationIDKey: "app_1", kumlabels.WorkspaceIDKey: "ws_1", kumlabels.ManagedByKey: kumlabels.ManagedByValue}
+	require.NoError(t, configureImmutablePodIdentity(u, identity))
+	selector, found, err := unstructured.NestedStringMap(u.Object, "spec", "selector", "matchLabels")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, map[string]string{"app": "stable"}, selector)
+	templateLabels, found, err := unstructured.NestedStringMap(u.Object, "spec", "template", "metadata", "labels")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, "stable", templateLabels["app"])
+	require.Equal(t, "app_1", templateLabels[kumlabels.ApplicationIDKey])
+}
+
+func TestPreserveLiveWorkloadSelectorWithFakeClient(t *testing.T) {
+	scheme := setupScheme()
+	live := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "default"},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "stable"}},
+			Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "stable"}}},
+		},
+	}
+	cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(live).Build()
+	desired := &unstructured.Unstructured{}
+	desired.SetAPIVersion("apps/v1")
+	desired.SetKind("Deployment")
+	desired.SetName("app")
+	desired.SetNamespace("default")
+	spec := appsv1alpha1.ApplicationSpec{Template: toRaw(&corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "nginx"}}}})}
+	reconciler := &ApplicationReconciler{}
+	require.NoError(t, reconciler.configureWorkload(desired, spec, 0))
+	require.NoError(t, preserveLiveWorkloadSelector(context.Background(), cli, desired, false))
+	identity := map[string]string{kumlabels.ApplicationIDKey: "app_1", kumlabels.WorkspaceIDKey: "ws_1", kumlabels.ManagedByKey: kumlabels.ManagedByValue}
+	require.NoError(t, configureImmutablePodIdentity(desired, identity))
+	selector, _, err := unstructured.NestedStringMap(desired.Object, "spec", "selector", "matchLabels")
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"app": "stable"}, selector)
+	templateLabels, _, err := unstructured.NestedStringMap(desired.Object, "spec", "template", "metadata", "labels")
+	require.NoError(t, err)
+	require.Equal(t, "stable", templateLabels["app"])
+
+	require.NoError(t, unstructured.SetNestedMap(desired.Object, map[string]interface{}{"matchLabels": map[string]interface{}{"app": "changed"}}, "spec", "selector"))
+	err = preserveLiveWorkloadSelector(context.Background(), cli, desired, true)
+	require.ErrorContains(t, err, "unsupported immutable workload selector change")
 }
 
 func toRaw(obj interface{}) runtime.RawExtension {
@@ -195,6 +277,7 @@ func TestApplicationReconciler_Reconcile_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ensureTestApplicationIdentity(tt.app)
 			objs := append([]client.Object{tt.app}, tt.clusters...)
 			objs = append(objs, tt.secrets...)
 			cl := fake.NewClientBuilder().
@@ -313,6 +396,7 @@ func TestApplicationReconciler_Reconcile(t *testing.T) {
 		},
 	}
 
+	ensureTestApplicationIdentity(app)
 	cl := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(secret, clusterObj, app).
@@ -403,6 +487,7 @@ func TestApplicationReconciler_JobWorkload(t *testing.T) {
 		},
 	}
 
+	ensureTestApplicationIdentity(app)
 	cl := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(secret, clusterObj, app).
@@ -485,6 +570,7 @@ func TestApplicationReconciler_WithOverrides(t *testing.T) {
 		},
 	}
 
+	ensureTestApplicationIdentity(app)
 	cl := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(secret, clusterObj, app).
@@ -559,6 +645,7 @@ func TestApplicationReconciler_PDB(t *testing.T) {
 		},
 	}
 
+	ensureTestApplicationIdentity(app)
 	hubClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithStatusSubresource(&appsv1alpha1.Application{}).
@@ -585,6 +672,7 @@ func TestApplicationReconciler_PDB(t *testing.T) {
 	edgePDB := &policyv1.PodDisruptionBudget{}
 	err = edgeClient.Get(context.Background(), types.NamespacedName{Name: "test-app", Namespace: "default"}, edgePDB)
 	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{kumlabels.ApplicationIDKey: "application_test", kumlabels.WorkspaceIDKey: "workspace_test", kumlabels.ManagedByKey: kumlabels.ManagedByValue}, edgePDB.Spec.Selector.MatchLabels)
 
 	// Verify Workload in edge cluster
 	edgeDep := &unstructured.Unstructured{}
@@ -592,6 +680,14 @@ func TestApplicationReconciler_PDB(t *testing.T) {
 	edgeDep.SetKind("Deployment")
 	err = edgeClient.Get(context.Background(), types.NamespacedName{Name: "test-app", Namespace: "default"}, edgeDep)
 	assert.NoError(t, err)
+}
+
+func ensureTestApplicationIdentity(app *appsv1alpha1.Application) {
+	if app.Labels == nil {
+		app.Labels = map[string]string{}
+	}
+	app.Labels[kumlabels.ApplicationIDKey] = "application_test"
+	app.Labels[kumlabels.WorkspaceIDKey] = "workspace_test"
 }
 
 func TestApplicationReconciler_CronJobSpecs(t *testing.T) {

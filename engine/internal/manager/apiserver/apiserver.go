@@ -56,7 +56,15 @@ func (s *APIServer) Start(ctx context.Context) error {
 	logger.Info("Starting APIServer with custom configuration")
 	o := NewAPIServerOptions()
 	o.SecureServing.BindPort = s.Port
-	o.SecureServing.ServerCert.CertDirectory = "/tmp" // Ensure we can write self-signed certs
+	// The manager chart mounts the cert-manager issued tunnel certificate at
+	// this path.  Use it for the aggregated API/tunnel server so remote agents
+	// validate the configured external SAN.  When running outside Kubernetes
+	// (or without the Secret), MaybeDefaultWithSelfSignedCerts still provides a
+	// development fallback below.
+	const mountedCertDir = "/tmp/k8s-webhook-server/serving-certs"
+	o.SecureServing.ServerCert.CertDirectory = mountedCertDir
+	o.SecureServing.ServerCert.CertKey.CertFile = mountedCertDir + "/tls.crt"
+	o.SecureServing.ServerCert.CertKey.KeyFile = mountedCertDir + "/tls.key"
 
 	codecs := serializer.NewCodecFactory(s.Scheme)
 

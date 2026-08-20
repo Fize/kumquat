@@ -2,10 +2,13 @@ package cluster
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -15,16 +18,15 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	agentmetrics "github.com/fize/kumquat/engine/internal/agent/metrics"
 	clusterv1alpha1 "github.com/fize/kumquat/engine/pkg/apis/storage/v1alpha1"
 	"github.com/fize/kumquat/engine/pkg/constants"
 	"github.com/fize/kumquat/engine/pkg/observability"
 	"github.com/fize/kumquat/engine/pkg/scheme"
-	agentmetrics "github.com/fize/kumquat/engine/internal/agent/metrics"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -32,11 +34,14 @@ import (
 
 // AgentOptions holds the configuration for the Agent
 type AgentOptions struct {
-	HubURL            string
-	TunnelURL         string
-	ClusterName       string
-	BootstrapToken    string
-	HeartbeatInterval time.Duration
+	HubURL             string
+	TunnelURL          string
+	ClusterName        string
+	BootstrapToken     string
+	BootstrapTokenFile string
+	HubCAFile          string
+	TunnelCAFile       string
+	HeartbeatInterval  time.Duration
 }
 
 // Agent is the edge agent that connects to the Hub
@@ -47,11 +52,12 @@ type Agent struct {
 	LocalClient client.Client
 }
 
+var inClusterConfig = rest.InClusterConfig
+var serviceAccountTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+var serviceAccountCAPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
 // NewAgent creates a new Agent with the given options
 func NewAgent(opts AgentOptions) *Agent {
-	if opts.TunnelURL == "" {
-		opts.TunnelURL = opts.HubURL
-	}
 	return &Agent{
 		Options: opts,
 	}
@@ -62,20 +68,25 @@ func (a *Agent) InitHubClient() error {
 	var config *rest.Config
 	var err error
 
-	if a.Options.HubURL != "" && a.Options.BootstrapToken != "" {
+	hasBootstrapCredential := a.Options.BootstrapTokenFile != ""
+	if (a.Options.HubURL == "") != !hasBootstrapCredential {
+		return fmt.Errorf("hub URL and bootstrap token must be configured together")
+	}
+	if a.Options.HubURL != "" {
+		if a.Options.HubCAFile == "" {
+			return fmt.Errorf("hub CA file is required for remote authentication")
+		}
 		config = &rest.Config{
-			Host:        a.Options.HubURL,
-			BearerToken: a.Options.BootstrapToken,
+			Host: a.Options.HubURL,
 			TLSClientConfig: rest.TLSClientConfig{
-				Insecure: true,
+				CAFile: a.Options.HubCAFile,
 			},
 		}
+		config.BearerTokenFile = a.Options.BootstrapTokenFile
 	} else {
-		loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-		configOverrides := &clientcmd.ConfigOverrides{}
-		config, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides).ClientConfig()
+		config, err = inClusterConfig()
 		if err != nil {
-			return fmt.Errorf("failed to load kubeconfig: %w", err)
+			return fmt.Errorf("failed to load in-cluster config: %w", err)
 		}
 	}
 
@@ -89,17 +100,55 @@ func (a *Agent) InitHubClient() error {
 	return nil
 }
 
+func (a *Agent) tunnelHeaders() (http.Header, error) {
+	if a.Options.BootstrapTokenFile == "" {
+		return nil, fmt.Errorf("tunnel token file is required")
+	}
+	data, err := os.ReadFile(a.Options.BootstrapTokenFile)
+	if err != nil {
+		return nil, fmt.Errorf("read tunnel token file: %w", err)
+	}
+	token := strings.TrimSpace(string(data))
+	if token == "" {
+		return nil, fmt.Errorf("tunnel token is empty")
+	}
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer "+token)
+	headers.Set("X-Kumquat-Cluster-Name", a.Options.ClusterName)
+	headers.Set("X-Remotedialer-ID", a.Options.ClusterName)
+	return headers, nil
+}
+
+func (a *Agent) tunnelTLSConfig() (*tls.Config, error) {
+	if a.Options.TunnelCAFile == "" {
+		return nil, fmt.Errorf("tunnel CA file is required")
+	}
+	caData, err := os.ReadFile(a.Options.TunnelCAFile)
+	if err != nil {
+		return nil, fmt.Errorf("read tunnel CA file: %w", err)
+	}
+	caPool := x509.NewCertPool()
+	if !caPool.AppendCertsFromPEM(caData) {
+		return nil, fmt.Errorf("tunnel CA file contains no certificates")
+	}
+	u, err := url.Parse(a.Options.TunnelURL)
+	if err != nil || u.Hostname() == "" {
+		return nil, fmt.Errorf("invalid tunnel URL")
+	}
+	return &tls.Config{RootCAs: caPool, ServerName: u.Hostname(), MinVersion: tls.VersionTLS12}, nil
+}
+
 func (a *Agent) getClusterCredentials() (map[string]string, error) {
 	creds := make(map[string]string)
 
 	// Read CA
-	caData, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+	caData, err := os.ReadFile(serviceAccountCAPath)
 	if err == nil {
 		creds[constants.AnnotationCredentialsCA] = base64.StdEncoding.EncodeToString(caData)
 	}
 
 	// Read Token
-	tokenData, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token")
+	tokenData, err := os.ReadFile(serviceAccountTokenPath)
 	if err == nil {
 		creds[constants.AnnotationCredentialsToken] = string(tokenData)
 	}
@@ -116,12 +165,57 @@ func (a *Agent) getClusterCredentials() (map[string]string, error) {
 	return creds, nil
 }
 
+func (a *Agent) getRequiredClusterCredentials() (map[string]string, error) {
+	caData, err := os.ReadFile(serviceAccountCAPath)
+	if err != nil {
+		return nil, fmt.Errorf("read projected service account CA: %w", err)
+	}
+	tokenData, err := os.ReadFile(serviceAccountTokenPath)
+	if err != nil {
+		return nil, fmt.Errorf("read projected service account token: %w", err)
+	}
+	creds, _ := a.getClusterCredentials()
+	creds[constants.AnnotationCredentialsCA] = base64.StdEncoding.EncodeToString(caData)
+	creds[constants.AnnotationCredentialsToken] = strings.TrimSpace(string(tokenData))
+	if !credentialsComplete(creds) {
+		return nil, fmt.Errorf("projected cluster credentials are incomplete")
+	}
+	return creds, nil
+}
+
+func credentialsHash(creds map[string]string) string {
+	keys := []string{constants.AnnotationAPIServerURL, constants.AnnotationCredentialsCA, constants.AnnotationCredentialsCert, constants.AnnotationCredentialsKey, constants.AnnotationCredentialsToken}
+	h := sha256.New()
+	for _, key := range keys {
+		_, _ = h.Write([]byte(key))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(creds[key]))
+		_, _ = h.Write([]byte{0})
+	}
+	return fmt.Sprintf("sha256:%x", h.Sum(nil))
+}
+
+func credentialsComplete(creds map[string]string) bool {
+	hasCA := creds[constants.AnnotationCredentialsCA] != ""
+	hasToken := creds[constants.AnnotationCredentialsToken] != ""
+	hasClientCertificate := creds[constants.AnnotationCredentialsCert] != "" && creds[constants.AnnotationCredentialsKey] != ""
+	return hasCA && (hasToken || hasClientCertificate)
+}
+
 func (a *Agent) Register(ctx context.Context) error {
 	if a.HubClient == nil {
 		return fmt.Errorf("hub client not initialized")
 	}
 
-	creds, _ := a.getClusterCredentials()
+	localReporter := a.Options.HubURL == ""
+	creds := map[string]string{}
+	if !localReporter {
+		var err error
+		creds, err = a.getRequiredClusterCredentials()
+		if err != nil {
+			return err
+		}
+	}
 
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		cluster := &clusterv1alpha1.ManagedCluster{}
@@ -131,10 +225,17 @@ func (a *Agent) Register(ctx context.Context) error {
 				return fmt.Errorf("failed to get cluster: %w", err)
 			}
 
+			if localReporter {
+				return fmt.Errorf("local Hub reporter requires existing cluster %s", a.Options.ClusterName)
+			}
+			creds[constants.AnnotationCredentialsHash] = credentialsHash(creds)
 			newCluster := &clusterv1alpha1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        a.Options.ClusterName,
 					Annotations: creds,
+					Labels: map[string]string{
+						constants.LabelRegistrationSource: constants.RegistrationSourceAgent,
+					},
 				},
 				Spec: clusterv1alpha1.ManagedClusterSpec{
 					ConnectionMode: clusterv1alpha1.ClusterConnectionModeEdge,
@@ -146,16 +247,36 @@ func (a *Agent) Register(ctx context.Context) error {
 			log.Log.Info("Registered new cluster", "cluster", a.Options.ClusterName)
 			return nil
 		}
+		if localReporter && (cluster.Spec.ConnectionMode != clusterv1alpha1.ClusterConnectionModeHub || cluster.Spec.APIServer != clusterv1alpha1.LocalAPIServer) {
+			return fmt.Errorf("local Hub reporter requires explicit local apiServer %q", clusterv1alpha1.LocalAPIServer)
+		}
+		if localReporter {
+			return nil
+		}
 
-		log.Log.Info("Cluster already exists, updating credentials", "cluster", a.Options.ClusterName)
+		original := cluster.DeepCopy()
+		changed := false
 		if cluster.Annotations == nil {
 			cluster.Annotations = make(map[string]string)
 		}
-		for k, v := range creds {
-			cluster.Annotations[k] = v
+		if cluster.Labels == nil {
+			cluster.Labels = make(map[string]string)
 		}
-		if err := a.HubClient.Update(ctx, cluster); err != nil {
-			return err
+		if cluster.Labels[constants.LabelRegistrationSource] != constants.RegistrationSourceAgent {
+			cluster.Labels[constants.LabelRegistrationSource] = constants.RegistrationSourceAgent
+			changed = true
+		}
+		hash := credentialsHash(creds)
+		if cluster.Annotations[constants.AnnotationCredentialsHash] != hash {
+			for k, v := range creds {
+				cluster.Annotations[k] = v
+			}
+			cluster.Annotations[constants.AnnotationCredentialsHash] = hash
+			changed = true
+		}
+		if changed {
+			log.Log.Info("Updating cluster registration credentials", "cluster", a.Options.ClusterName)
+			return a.HubClient.Patch(ctx, cluster, client.MergeFrom(original))
 		}
 		return nil
 	})
@@ -193,6 +314,29 @@ func (a *Agent) sendHeartbeat(ctx context.Context) error {
 		agentmetrics.RecordHeartbeat("error", time.Since(startTime))
 		observability.SpanError(ctx, err)
 		return err
+	}
+	if a.Options.HubURL != "" {
+		creds, err := a.getRequiredClusterCredentials()
+		if err != nil {
+			return err
+		}
+		hash := credentialsHash(creds)
+		if cluster.Annotations == nil || cluster.Annotations[constants.AnnotationCredentialsHash] != hash {
+			original := cluster.DeepCopy()
+			if cluster.Annotations == nil {
+				cluster.Annotations = map[string]string{}
+			}
+			for key, value := range creds {
+				cluster.Annotations[key] = value
+			}
+			cluster.Annotations[constants.AnnotationCredentialsHash] = hash
+			if err := a.HubClient.Patch(ctx, cluster, client.MergeFrom(original)); err != nil {
+				return err
+			}
+			if err := a.HubClient.Get(ctx, client.ObjectKey{Name: a.Options.ClusterName}, cluster); err != nil {
+				return err
+			}
+		}
 	}
 
 	now := metav1.Now()
@@ -321,11 +465,6 @@ func (a *Agent) collectNodeSummary(ctx context.Context) []clusterv1alpha1.NodeSu
 }
 
 func (a *Agent) StartTunnel(ctx context.Context) error {
-	headers := http.Header{}
-	headers.Set("Authorization", "Bearer "+a.Options.BootstrapToken)
-	headers.Set("X-Kumquat-Cluster-Name", a.Options.ClusterName)
-	headers.Set("X-Remotedialer-ID", a.Options.ClusterName)
-
 	url := fmt.Sprintf("%s/connect", a.Options.TunnelURL)
 	if strings.HasPrefix(url, "https") {
 		url = strings.Replace(url, "https", "wss", 1)
@@ -337,18 +476,25 @@ func (a *Agent) StartTunnel(ctx context.Context) error {
 
 	agentmetrics.SetTunnelConnected(false)
 
-	dialer := &websocket.Dialer{
-		Proxy:            http.ProxyFromEnvironment,
-		HandshakeTimeout: 45 * time.Second,
-		TLSClientConfig:  &tls.Config{InsecureSkipVerify: true},
-	}
-
 	for {
 		select {
 		case <-ctx.Done():
 			agentmetrics.SetTunnelConnected(false)
 			return nil
 		default:
+			headers, err := a.tunnelHeaders()
+			if err != nil {
+				return err
+			}
+			tlsConfig, err := a.tunnelTLSConfig()
+			if err != nil {
+				return err
+			}
+			dialer := &websocket.Dialer{
+				Proxy:            http.ProxyFromEnvironment,
+				HandshakeTimeout: 45 * time.Second,
+				TLSClientConfig:  tlsConfig,
+			}
 			_, span := observability.Tracer().Start(ctx, "Agent.TunnelConnect",
 				trace.WithAttributes(
 					attribute.String("cluster.name", a.Options.ClusterName),
@@ -357,7 +503,7 @@ func (a *Agent) StartTunnel(ctx context.Context) error {
 			)
 
 			log.Log.Info("Starting connection attempt", "url", url)
-			err := remotedialer.ClientConnect(ctx, url, headers, dialer, func(proto, address string) bool {
+			err = remotedialer.ClientConnect(ctx, url, headers, dialer, func(proto, address string) bool {
 				return true
 			}, nil)
 			if err != nil {

@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: kumquat-system
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: kumquat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api
+        app.kubernetes.io/part-of: kumquat
+    spec:
+      serviceAccountName: api
+      securityContext:
+        fsGroup: 65532
+      containers:
+        - name: api
+          image: kumquat/api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: KUMQUAT_API_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: kumquat-api
+                  key: jwt-secret
+            - name: KUMQUAT_API_SQL_TYPE
+              value: mysql
+            - name: KUMQUAT_API_SQL_HOST
+              valueFrom: {secretKeyRef: {name: kumquat-api, key: mysql-host}}
+            - name: KUMQUAT_API_SQL_USER
+              valueFrom: {secretKeyRef: {name: kumquat-api, key: mysql-user}}
+            - name: KUMQUAT_API_SQL_PASSWORD
+              valueFrom: {secretKeyRef: {name: kumquat-api, key: mysql-password}}
+            - name: KUMQUAT_API_SQL_DB
+              valueFrom: {secretKeyRef: {name: kumquat-api, key: mysql-database}}
+            - name: KUMQUAT_API_SQL_MAX_IDLE_CONNS
+              value: "5"
+            - name: KUMQUAT_API_SQL_MAX_OPEN_CONNS
+              value: "20"
+            - name: KUMQUAT_BOOTSTRAP_ADMIN_USERNAME
+              valueFrom: {secretKeyRef: {name: kumquat-api, key: bootstrap-admin-username}}
+            - name: KUMQUAT_BOOTSTRAP_ADMIN_EMAIL
+              valueFrom: {secretKeyRef: {name: kumquat-api, key: bootstrap-admin-email}}
+            - name: KUMQUAT_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: kumquat-api, key: bootstrap-admin-password}}
+            - name: KUMQUAT_API_KUBECONFIG
+              value: ""
+            - name: KUMQUAT_API_MASTER_URL
+              value: ""
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        - name: config
+          configMap:
+            name: api-config

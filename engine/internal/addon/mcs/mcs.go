@@ -9,10 +9,11 @@ import (
 	"sync"
 
 	"github.com/fize/kumquat/engine/internal/addon"
+	storagev1alpha1 "github.com/fize/kumquat/engine/pkg/apis/storage/v1alpha1"
 	"github.com/fize/kumquat/engine/pkg/constants"
 	"github.com/fize/kumquat/engine/pkg/helm"
-	storagev1alpha1 "github.com/fize/kumquat/engine/pkg/apis/storage/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -86,7 +87,13 @@ func (a *MCSAddon) ManagerController(mgr ctrl.Manager) (addon.AddonController, e
 }
 
 func (a *MCSAddon) AgentController(mgr ctrl.Manager) (addon.AddonController, error) {
-	return &AgentController{}, nil
+	if mgr == nil {
+		return &AgentController{namespace: firstNonEmpty(os.Getenv("NAMESPACE"), "default")}, nil
+	}
+	return &AgentController{
+		mgrClient: mgr.GetClient(),
+		namespace: firstNonEmpty(os.Getenv("NAMESPACE"), "default"),
+	}, nil
 }
 
 func (a *MCSAddon) Manifests() []runtime.Object {
@@ -309,6 +316,8 @@ func (c *ManagerController) getBrokerInfo(ctx context.Context, config map[string
 
 // AgentController implements the AddonController for the Edge side
 type AgentController struct {
+	mgrClient            client.Client
+	namespace            string
 	helmClient           helm.HelmClient // Supports dependency injection for testing
 	mu                   sync.RWMutex
 	lastSubmarinerConfig map[string]string
@@ -336,6 +345,14 @@ func (c *AgentController) Reconcile(ctx context.Context, config addon.AddonConfi
 	if brokerURL == "" || brokerToken == "" {
 		// Prerequisites not met: broker info not available yet
 		return fmt.Errorf("%w: brokerURL or brokerToken not configured", addon.ErrPrerequisitesNotMet)
+	}
+
+	// The Submariner operator creates and updates Lighthouse CRDs during startup.
+	// Its chart does not bind that narrow permission itself, so install an
+	// opt-in-only binding before creating the operator pod. This is deliberately
+	// limited to CRD lifecycle operations and the chart's operator ServiceAccount.
+	if err := c.ensureOperatorCRDRBAC(ctx); err != nil {
+		return fmt.Errorf("failed to prepare submariner operator RBAC: %w", err)
 	}
 
 	// Check if submariner chart config has changed (requires upgrade)
@@ -399,6 +416,45 @@ func (c *AgentController) Reconcile(ctx context.Context, config addon.AddonConfi
 		return fmt.Errorf("failed to install submariner agent: %v", err)
 	}
 
+	return nil
+}
+
+const submarinerOperatorCRDRBACName = "kumquat-mcs-submariner-operator-crds"
+
+func (c *AgentController) ensureOperatorCRDRBAC(ctx context.Context) error {
+	if c.mgrClient == nil {
+		return nil
+	}
+	role := &rbacv1.ClusterRole{}
+	roleKey := types.NamespacedName{Name: submarinerOperatorCRDRBACName}
+	err := c.mgrClient.Get(ctx, roleKey, role)
+	if k8serrors.IsNotFound(err) {
+		role = &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{Name: submarinerOperatorCRDRBACName, Labels: map[string]string{"app.kubernetes.io/managed-by": "kumquat"}},
+			Rules:      []rbacv1.PolicyRule{{APIGroups: []string{"apiextensions.k8s.io"}, Resources: []string{"customresourcedefinitions"}, Verbs: []string{"get", "list", "watch", "create", "update", "patch"}}},
+		}
+		if err := c.mgrClient.Create(ctx, role); err != nil && !k8serrors.IsAlreadyExists(err) {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+
+	binding := &rbacv1.ClusterRoleBinding{}
+	bindingKey := types.NamespacedName{Name: submarinerOperatorCRDRBACName}
+	err = c.mgrClient.Get(ctx, bindingKey, binding)
+	if k8serrors.IsNotFound(err) {
+		binding = &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: submarinerOperatorCRDRBACName, Labels: map[string]string{"app.kubernetes.io/managed-by": "kumquat"}},
+			RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: submarinerOperatorCRDRBACName},
+			Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: "submariner-operator", Namespace: c.namespace}},
+		}
+		if err := c.mgrClient.Create(ctx, binding); err != nil && !k8serrors.IsAlreadyExists(err) {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
 	return nil
 }
 

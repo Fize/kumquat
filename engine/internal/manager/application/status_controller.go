@@ -8,8 +8,9 @@ import (
 	"time"
 
 	"github.com/fize/kumquat/engine/internal/manager/cluster"
-	appsv1alpha1 "github.com/fize/kumquat/engine/pkg/apis/apps/v1alpha1"
 	"github.com/fize/kumquat/engine/internal/manager/sharding"
+	appsv1alpha1 "github.com/fize/kumquat/engine/pkg/apis/apps/v1alpha1"
+	"github.com/fize/kumquat/engine/pkg/util/labels"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -177,14 +178,18 @@ func (r *StatusReconciler) ensureWatch(ctx context.Context, clusterName string, 
 	src := &source.Informer{
 		Informer: informer,
 		Handler: handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-			labels := o.GetLabels()
-			appName := labels["kumquat.io/application"]
-			if appName == "" {
+			objectLabels := o.GetLabels()
+			appID := objectLabels[labels.ApplicationIDKey]
+			if appID == "" {
+				return nil
+			}
+			var apps appsv1alpha1.ApplicationList
+			if err := r.Client.List(ctx, &apps, client.InNamespace(o.GetNamespace()), client.MatchingLabels{labels.ApplicationIDKey: appID}); err != nil || len(apps.Items) != 1 {
 				return nil
 			}
 			return []reconcile.Request{
 				{NamespacedName: types.NamespacedName{
-					Name:      appName,
+					Name:      apps.Items[0].Name,
 					Namespace: o.GetNamespace(),
 				}},
 			}

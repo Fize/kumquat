@@ -21,6 +21,12 @@ logEncoder: json
 
 tunnelPort: 5443
 
+certificate:
+  # Every external hostname or IP used by a remote agent's manager.tunnel URL
+  # must be listed here before cert-manager issues the tunnel certificate.
+  externalDNSNames: []
+  externalIPAddresses: []
+
 service:
   type: ClusterIP
   # nodePort: 30443
@@ -32,14 +38,6 @@ service:
 insecureSkipTLSVerify: true
 # CA bundle for the APIService (base64 encoded). If not set, insecureSkipTLSVerify should be true
 # caBundle: ""
-
-bootstrap:
-  # REQUIRED: set via --set or external values file. Example:
-  #   --set bootstrap.id=<your-id> --set bootstrap.secret=<your-secret> --set bootstrap.expiration=<YYYY-MM-DDTHH:MM:SSZ>
-  # id: ""
-  # secret: ""
-  # expiration: ""
-
 
 imagePullSecrets: []
 nameOverride: ""

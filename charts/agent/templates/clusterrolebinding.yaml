@@ -1,11 +1,70 @@
 apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "agent.fullname" . }}
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["storage.kumquat.io"]
+  resources: ["managedclusters"]
+  resourceNames: [{{ .Values.clustername | quote }}]
+  verbs: ["get", "update"]
+- apiGroups: ["storage.kumquat.io"]
+  resources: ["managedclusters/status"]
+  resourceNames: [{{ .Values.clustername | quote }}]
+  verbs: ["get", "update", "patch"]
+- nonResourceURLs: ["/api", "/apis"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["namespaces", "resourcequotas", "limitranges"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["policy"]
+  resources: ["poddisruptionbudgets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+{{- if .Values.addons.enabled }}
+- apiGroups: [""]
+  resources: ["secrets", "configmaps", "serviceaccounts", "services", "events", "persistentvolumeclaims"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "bind", "escalate"]
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["admissionregistration.k8s.io"]
+  resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["rollouts.kruise.io"]
+  resources: ["rollouts"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["submariner.io"]
+  # The Submariner operator chart manages these CRDs in the Edge cluster.
+  # This is scoped to its API group and only rendered for explicit addon opt-in.
+  resources: ["*"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- nonResourceURLs:
+  - "/apis/rollouts.kruise.io"
+  - "/apis/rollouts.kruise.io/*"
+  - "/apis/submariner.io"
+  - "/apis/submariner.io/*"
+  verbs: ["get"]
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: kumquat:agent:admin
+  name: {{ include "agent.fullname" . }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: cluster-admin
+  name: {{ include "agent.fullname" . }}
 subjects:
 - kind: ServiceAccount
   name: {{ include "agent.serviceAccountName" . }}

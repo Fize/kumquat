@@ -1,12 +1,12 @@
 # Build stage
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24.4-alpine AS builder
 
 WORKDIR /workspace
 
 # Copy the Go Modules manifests
 COPY go.mod go.mod
 COPY go.sum go.sum
-RUN go mod download
+RUN GOTOOLCHAIN=local go mod download
 
 # Copy the go source
 COPY cmd/ cmd/
@@ -14,13 +14,13 @@ COPY pkg/ pkg/
 COPY internal/ internal/
 
 # Build manager
-RUN CGO_ENABLED=0 GOOS=linux go build -a -o manager cmd/manager/manager.go
+RUN GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux go build -a -o manager cmd/manager/manager.go
 
 # Build agent
-RUN CGO_ENABLED=0 GOOS=linux go build -a -o agent cmd/agent/agent.go
+RUN GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux go build -a -o agent cmd/agent/agent.go
 
 # Final image
-FROM alpine:latest
+FROM alpine:3.20
 WORKDIR /
 COPY --from=builder /workspace/manager .
 COPY --from=builder /workspace/agent .

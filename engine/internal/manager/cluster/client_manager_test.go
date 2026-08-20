@@ -30,6 +30,43 @@ func (m *mockTunnelServer) Dialer(clientKey string) remotedialer.Dialer {
 	}
 }
 
+func TestBuildHubModeConfigUsesInClusterIdentityWithoutSecret(t *testing.T) {
+	original := inClusterConfig
+	t.Cleanup(func() { inClusterConfig = original })
+	inClusterConfig = func() (*rest.Config, error) {
+		return &rest.Config{Host: "https://kubernetes.default.svc"}, nil
+	}
+
+	manager := &ClientManager{}
+	config, err := manager.buildHubModeConfig(context.Background(), &clusterv1alpha1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "local-hub"},
+		Spec: clusterv1alpha1.ManagedClusterSpec{
+			ConnectionMode: clusterv1alpha1.ClusterConnectionModeHub,
+			APIServer:      clusterv1alpha1.LocalAPIServer,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build local Hub config: %v", err)
+	}
+	if config.Host != "https://kubernetes.default.svc" {
+		t.Fatalf("expected in-cluster host, got %q", config.Host)
+	}
+}
+
+func TestBuildHubModeConfigRejectsMissingRemoteSecret(t *testing.T) {
+	manager := &ClientManager{}
+	_, err := manager.buildHubModeConfig(context.Background(), &clusterv1alpha1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "misconfigured-remote"},
+		Spec: clusterv1alpha1.ManagedClusterSpec{
+			ConnectionMode: clusterv1alpha1.ClusterConnectionModeHub,
+			APIServer:      "https://remote.example.test:6443",
+		},
+	})
+	if err == nil {
+		t.Fatal("remote Hub cluster without secretRef must be rejected")
+	}
+}
+
 func TestClientManager_GetClient(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)

@@ -7,9 +7,6 @@ metadata:
   name: v1alpha1.cluster.kumquat.io
   labels:
     {{- include "manager.labels" . | nindent 4 }}
-  annotations:
-    helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-weight: "10"
 spec:
   group: cluster.kumquat.io
   groupPriorityMinimum: 2000

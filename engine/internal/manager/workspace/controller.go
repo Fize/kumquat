@@ -68,7 +68,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	// Create or Update the Namespace, ensuring the OwnerReference is set (Adoption)
 	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, hubNS, func() error {
-		pkglabel.AddManagedBy(hubNS)
+		pkglabel.CopyBusinessIdentity(hubNS, &workspace)
 
 		// This block is executed for both Create (before) and Update (after fetching)
 		// It ensures that even if the Namespace exists, we try to adopt it by setting the OwnerRef.
@@ -183,7 +183,7 @@ func (r *WorkspaceReconciler) reconcileCluster(ctx context.Context, workspace *w
 		},
 	}
 	if _, err := ctrl.CreateOrUpdate(ctx, edgeClient, ns, func() error {
-		pkglabel.AddManagedBy(ns)
+		pkglabel.CopyBusinessIdentity(ns, workspace)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile namespace: %w", err)

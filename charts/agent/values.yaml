@@ -15,6 +15,7 @@ nameOverride: ""
 fullnameOverride: ""
 
 clustername: "agent"
+heartbeatInterval: 1m
 
 enableSchemes: cluster,deployment,cronjob
 
@@ -22,12 +23,20 @@ logLevel: 5
 logEncoder: json
 
 manager:
-  # REQUIRED: set via --set or external values file. Example:
-  #   --set manager.token=<your-bootstrap-token>
-  # token: ""
-  master: "https://kumquat-hub-control-plane:6443"
+  # Leave these empty for an agent running in the Hub cluster. Remote agents
+  # must reference a separately managed Secret instead of putting credentials
+  # in Helm values or Pod arguments.
+  master: ""
+  tunnel: ""
+  existingSecret: ""
+  tokenKey: token
+  hubCAKey: hub-ca.crt
+  tunnelCAKey: tunnel-ca.crt
   region: ""
   area: ""
+
+addons:
+  enabled: false
 
 serviceAccount:
   # Specifies whether a service account should be created

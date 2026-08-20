@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: api
+  namespace: kumquat-system
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: kumquat
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: api
+  namespace: kumquat-system
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: kumquat
+rules:
+  # Applications (apps.kumquat.io) - namespaced operations
+  - apiGroups: ["apps.kumquat.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: api
+  namespace: kumquat-system
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: kumquat
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: api
+subjects:
+  - kind: ServiceAccount
+    name: api
+    namespace: kumquat-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: kumquat
+rules:
+  # Workspaces (workspace.kumquat.io) - cluster-scoped
+  - apiGroups: ["workspace.kumquat.io"]
+    resources: ["workspaces"]
+    verbs: ["get", "list", "create", "update", "delete"]
+  # Agent-created Engine cluster records. Adoption adds controlled metadata;
+  # credential annotations are never copied into the API database.
+  - apiGroups: ["storage.kumquat.io"]
+    resources: ["managedclusters"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  # Applications (apps.kumquat.io) - needs cluster-scoped list
+  - apiGroups: ["apps.kumquat.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: kumquat
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: api
+subjects:
+  - kind: ServiceAccount
+    name: api
+    namespace: kumquat-system

@@ -6,6 +6,15 @@ spec:
   dnsNames:
   - {{ include "manager.fullname" . }}-webhook.{{ .Release.Namespace }}.svc
   - {{ include "manager.fullname" . }}-webhook.{{ .Release.Namespace }}.svc.cluster.local
+  {{- range .Values.certificate.externalDNSNames }}
+  - {{ . | quote }}
+  {{- end }}
+  {{- with .Values.certificate.externalIPAddresses }}
+  ipAddresses:
+  {{- range . }}
+  - {{ . | quote }}
+  {{- end }}
+  {{- end }}
   issuerRef:
     kind: Issuer
     name: {{ include "manager.fullname" . }}

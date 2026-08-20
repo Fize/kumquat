@@ -100,10 +100,18 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+          - mountPath: /tmp
+            name: runtime-tmp
+          - mountPath: /home/nonroot/.cache
+            name: helm-cache
           - mountPath: /tmp/k8s-webhook-server/serving-certs
             name: cert
             readOnly: true
       volumes:
+      - name: runtime-tmp
+        emptyDir: {}
+      - name: helm-cache
+        emptyDir: {}
       - name: cert
         secret:
           defaultMode: 420

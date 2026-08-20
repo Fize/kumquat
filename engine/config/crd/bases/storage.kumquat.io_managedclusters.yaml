@@ -132,6 +132,11 @@ spec:
                   type: object
                 type: array
             type: object
+            x-kubernetes-validations:
+            - message: remote Hub clusters require secretRef; use apiServer in-cluster://
+                only for the Engine host cluster
+              rule: self.connectionMode != 'Hub' || self.apiServer == 'in-cluster://'
+                || has(self.secretRef)
           status:
             description: ManagedClusterStatus defines the observed state of Cluster
             properties:

@@ -73,7 +73,7 @@ integrations/
 
 - [ ] Multi-cluster VPN mesh support
 - [ ] Integration with Kumquat Application for auto-service discovery
-- [ ] Web UI integration in Portal
+- [ ] Web UI integration in API
 - [ ] Optional: Promote to lightweight Addon for declarative management
 
 ## User Workflow

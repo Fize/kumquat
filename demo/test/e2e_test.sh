@@ -1,533 +1,174 @@
 #!/usr/bin/env bash
-# Kumquat Demo Full E2E Test Suite
-#
-# Performs comprehensive end-to-end testing including:
-# - Infrastructure validation (kind clusters, cert-manager, components)
-# - Portal API functional testing
-# - Addon deployment verification
-
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEMO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+API_URL="${KUMQUAT_DEMO_API_URL:-http://127.0.0.1:31080}"
+HUB_CONTEXT=kind-kumquat-hub
+NAMESPACE=kumquat-system
+TMP_DIR="$(mktemp -d)"
+BODY_FILE="${TMP_DIR}/response.json"
+AUTH_CONFIG="${TMP_DIR}/curl-auth.conf"
+KUMCTL="${TMP_DIR}/kumctl"
+TOKEN=""
 
-# Configuration
-PORTAL_URL="http://localhost:30080"
-HUB_CLUSTER="kumquat-hub"
-SUB_CLUSTERS=("kumquat-sub-1" "kumquat-sub-2")
-ALL_CLUSTERS=("${HUB_CLUSTER}" "${SUB_CLUSTERS[@]}")
-TEST_USERNAME="e2e_test_user"
-TEST_PASSWORD="TestPass123!"
-TEST_EMAIL="e2e@test.com"
+cleanup() { rm -rf "${TMP_DIR}"; }
+trap cleanup EXIT
+log() { printf '[e2e] %s\n' "$*"; }
+fail() { printf '[e2e] FAIL: %s\n' "$*" >&2; exit 1; }
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-# Test counters
-TESTS_PASSED=0
-TESTS_FAILED=0
-
-# JWT Token
-JWT_TOKEN=""
-
-# ======================== Utility Functions ========================
-
-log_info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
-log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
-log_step()  { echo -e "${BLUE}[STEP]${NC} $1"; }
-log_phase() { echo -e "${CYAN}[PHASE]${NC} $1"; }
-
-http_request() {
-    local method=$1
-    local endpoint=$2
-    local data=${3:-""}
-    local token=${4:-""}
-
-    local curl_cmd="curl -s -w '\n%{http_code}' -X ${method}"
-
-    if [[ -n "$token" ]]; then
-        curl_cmd="${curl_cmd} -H 'Authorization: Bearer ${token}'"
-    fi
-
-    if [[ "$method" == "POST" || "$method" == "PUT" || "$method" == "PATCH" ]]; then
-        curl_cmd="${curl_cmd} -H 'Content-Type: application/json'"
-        if [[ -n "$data" ]]; then
-            curl_cmd="${curl_cmd} -d '${data}'"
-        fi
-    fi
-
-    curl_cmd="${curl_cmd} ${PORTAL_URL}${endpoint}"
-
-    eval "$curl_cmd" 2>/dev/null || echo '{"error":"connection failed"}'$'\n'"000"
+json_get() {
+  python3 -c 'import json,sys
+value=json.load(sys.stdin)
+for key in sys.argv[1].split("."):
+    value=value[int(key)] if isinstance(value,list) else value[key]
+print(value if not isinstance(value,(dict,list)) else json.dumps(value))' "$1"
 }
 
-assert_status() {
-    local expected=$1
-    local actual=$2
-    local test_name=$3
+secret_value() {
+  kubectl --context "${HUB_CONTEXT}" -n "${NAMESPACE}" get secret kumquat-api \
+    -o "jsonpath={.data.$1}" | base64 --decode
+}
 
-    if [[ "$expected" == "$actual" ]]; then
-        log_info "  PASS: $test_name (HTTP $actual)"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        return 0
+request() {
+  local method=$1 path=$2 data=${3:-} expected=${4:-200}
+  local args=(--silent --show-error --output "${BODY_FILE}" --write-out '%{http_code}' --request "${method}")
+  [[ -n "${TOKEN}" ]] && args+=(--config "${AUTH_CONFIG}")
+  if [[ -n "${data}" ]]; then
+    args+=(--header 'Content-Type: application/json' --data-binary @-)
+  fi
+  local status
+  if [[ -n "${data}" ]]; then
+    status="$(printf '%s' "${data}" | curl "${args[@]}" "${API_URL}${path}")" || fail "${method} ${path} connection failed"
+  else
+    status="$(curl "${args[@]}" "${API_URL}${path}")" || fail "${method} ${path} connection failed"
+  fi
+  [[ "${status}" == "${expected}" ]] || fail "${method} ${path}: expected HTTP ${expected}, got ${status}: $(cat "${BODY_FILE}")"
+}
+
+wait_for_resource() {
+  local kind=$1 name=$2 namespace=${3:-} attempt
+  for attempt in $(seq 1 90); do
+    if [[ -n "${namespace}" ]]; then
+      kubectl --context "${HUB_CONTEXT}" -n "${namespace}" get "${kind}" "${name}" >/dev/null 2>&1 && return
     else
-        log_error "  FAIL: $test_name (expected HTTP $expected, got $actual)"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        return 1
+      kubectl --context "${HUB_CONTEXT}" get "${kind}" "${name}" >/dev/null 2>&1 && return
     fi
+    sleep 2
+  done
+  fail "timed out waiting for ${kind}/${name} projection"
 }
 
-assert_contains() {
-    local expected=$1
-    local actual=$2
-    local test_name=$3
-
-    if echo "$actual" | grep -q "$expected"; then
-        log_info "  PASS: $test_name"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        return 0
-    else
-        log_error "  FAIL: $test_name (expected to contain: $expected)"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        return 1
-    fi
+wait_operation() {
+  local operation_id=$1 output=$2 attempt state
+  for attempt in $(seq 1 90); do
+    "${KUMCTL}" --server "${API_URL}" --token "${TOKEN}" get operations "${operation_id}" >"${output}"
+    state="$(json_get state <"${output}")"
+    [[ "${state}" == succeeded ]] && return
+    [[ "${state}" == failed ]] && fail "operation ${operation_id} failed: $(cat "${output}")"
+    sleep 2
+  done
+  fail "operation ${operation_id} timed out"
 }
 
-assert_condition() {
-    local condition=$1
-    local test_name=$2
-
-    if eval "$condition" &>/dev/null; then
-        log_info "  PASS: $test_name"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-        return 0
-    else
-        log_error "  FAIL: $test_name"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        return 1
-    fi
-}
-
-# ======================== Infrastructure Tests ========================
-
-test_clusters_exist() {
-    log_phase "Infrastructure Test 1: Cluster Existence"
-
-    for cluster in "${ALL_CLUSTERS[@]}"; do
-        if kind get clusters 2>/dev/null | grep -q "^${cluster}$"; then
-            log_info "  PASS: Cluster ${cluster} exists"
-            TESTS_PASSED=$((TESTS_PASSED + 1))
-        else
-            log_error "  FAIL: Cluster ${cluster} does not exist"
-            TESTS_FAILED=$((TESTS_FAILED + 1))
-        fi
-    done
-}
-
-test_cert_manager() {
-    log_phase "Infrastructure Test 2: cert-manager Deployment"
-
-    local ctx="kind-${HUB_CLUSTER}"
-
-    # Check namespace exists
-    assert_condition "kubectl --context ${ctx} get namespace cert-manager" \
-        "cert-manager namespace exists"
-
-    # Check webhook deployment is ready
-    local ready_replicas
-    ready_replicas=$(kubectl --context "${ctx}" -n cert-manager get deployment cert-manager-webhook -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-    if [[ "${ready_replicas}" == "1" ]]; then
-        log_info "  PASS: cert-manager-webhook is ready"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        log_error "  FAIL: cert-manager-webhook not ready (readyReplicas=${ready_replicas})"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-    fi
-
-    # Check cert-manager pods are running
-    local running_pods
-    running_pods=$(kubectl --context "${ctx}" -n cert-manager get pods --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' ')
-    if [[ "${running_pods}" -ge 3 ]]; then
-        log_info "  PASS: cert-manager pods running (${running_pods} pods)"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        log_error "  FAIL: cert-manager pods not running (only ${running_pods} Running pods)"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-    fi
-}
-
-test_hub_components() {
-    log_phase "Infrastructure Test 3: Hub Components"
-
-    local ctx="kind-${HUB_CLUSTER}"
-    local ns="kumquat-system"
-
-    # Check manager deployment
-    local mgr_ready
-    mgr_ready=$(kubectl --context "${ctx}" -n "${ns}" get deployment engine-manager -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-    if [[ "${mgr_ready}" == "1" ]]; then
-        log_info "  PASS: engine-manager is ready"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        log_error "  FAIL: engine-manager not ready (readyReplicas=${mgr_ready})"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        # Show pod status for debugging
-        kubectl --context "${ctx}" -n "${ns}" get pods -l app.kubernetes.io/name=manager --no-headers 2>/dev/null || true
-    fi
-
-    # Check scheduler deployment
-    local sched_ready
-    sched_ready=$(kubectl --context "${ctx}" -n "${ns}" get deployment engine-scheduler -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-    if [[ "${sched_ready}" == "1" ]]; then
-        log_info "  PASS: engine-scheduler is ready"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        log_error "  FAIL: engine-scheduler not ready (readyReplicas=${sched_ready})"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        kubectl --context "${ctx}" -n "${ns}" get pods -l app.kubernetes.io/name=scheduler --no-headers 2>/dev/null || true
-    fi
-}
-
-test_sub_agents() {
-    log_phase "Infrastructure Test 4: Sub Cluster Agents"
-
-    for sub in "${SUB_CLUSTERS[@]}"; do
-        local ctx="kind-${sub}"
-        local ns="kumquat-system"
-
-        local agent_ready
-        agent_ready=$(kubectl --context "${ctx}" -n "${ns}" get deployment engine-agent -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-        if [[ "${agent_ready}" == "1" ]]; then
-            log_info "  PASS: engine-agent on ${sub} is ready"
-            TESTS_PASSED=$((TESTS_PASSED + 1))
-        else
-            log_error "  FAIL: engine-agent on ${sub} not ready (readyReplicas=${agent_ready})"
-            TESTS_FAILED=$((TESTS_FAILED + 1))
-            kubectl --context "${ctx}" -n "${ns}" get pods -l app.kubernetes.io/name=agent --no-headers 2>/dev/null || true
-        fi
-    done
-}
-
-test_managedclusters() {
-    log_phase "Infrastructure Test 5: ManagedCluster CRs"
-
-    local ctx="kind-${HUB_CLUSTER}"
-
-    for cluster in "${ALL_CLUSTERS[@]}"; do
-        if kubectl --context "${ctx}" get managedcluster "${cluster}" &>/dev/null; then
-            log_info "  PASS: ManagedCluster ${cluster} exists"
-            TESTS_PASSED=$((TESTS_PASSED + 1))
-        else
-            log_error "  FAIL: ManagedCluster ${cluster} does not exist"
-            TESTS_FAILED=$((TESTS_FAILED + 1))
-        fi
-    done
-}
-
-test_addons() {
-    log_phase "Infrastructure Test 6: Addon Deployment Status"
-
-    local ctx="kind-${HUB_CLUSTER}"
-    local ns="kumquat-system"
-
-    # Wait for addon reconciliation with retries (max 60s)
-    log_step "Waiting for addon reconciliation (max 60s)..."
-    local retries=0
-    local hub_addon_ready=false
-    while [[ $retries -lt 12 ]]; do
-        local addon_status
-        addon_status=$(kubectl --context "${ctx}" get managedcluster "${HUB_CLUSTER}" -o jsonpath='{.status.addonStatus}' 2>/dev/null || echo "[]")
-
-        if echo "$addon_status" | grep -q '"name":"kruise-rollout".*"state":"Applied"'; then
-            hub_addon_ready=true
-            break
-        fi
-
-        retries=$((retries + 1))
-        sleep 5
-    done
-
-    if [[ "$hub_addon_ready" == true ]]; then
-        log_info "  PASS: kruise-rollout addon is Applied on Hub"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        log_error "  FAIL: kruise-rollout addon is not Applied on Hub"
-        kubectl --context "${ctx}" get managedcluster "${HUB_CLUSTER}" -o yaml 2>/dev/null | grep -A 20 "addonStatus" || true
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-    fi
-
-    # Check sub clusters with retries (max 60s each)
-    for sub in "${SUB_CLUSTERS[@]}"; do
-        local sub_ctx="kind-${sub}"
-        local sub_retries=0
-        local sub_ready=false
-        while [[ $sub_retries -lt 12 ]]; do
-            if kubectl --context "${sub_ctx}" get namespace kruise-rollout &>/dev/null; then
-                sub_ready=true
-                break
-            fi
-            sub_retries=$((sub_retries + 1))
-            sleep 5
-        done
-
-        if [[ "$sub_ready" == true ]]; then
-            log_info "  PASS: kruise-rollout namespace exists on ${sub}"
-            TESTS_PASSED=$((TESTS_PASSED + 1))
-        else
-            log_error "  FAIL: kruise-rollout namespace not found on ${sub}"
-            TESTS_FAILED=$((TESTS_FAILED + 1))
-        fi
-    done
-}
-
-# ======================== Portal API Tests ========================
-
-test_portal_health() {
-    log_phase "Portal Test 1: Health Check"
-
-    local response
-    response=$(http_request "GET" "/healthz")
-    local http_code=$(echo "$response" | tail -n1)
-
-    assert_status "200" "$http_code" "Health endpoint returns 200"
-}
-
-test_user_register() {
-    log_phase "Portal Test 2: User Registration"
-
-    local data="{\"username\":\"${TEST_USERNAME}\",\"password\":\"${TEST_PASSWORD}\",\"email\":\"${TEST_EMAIL}\",\"real_name\":\"E2E Test\"}"
-    local response
-    response=$(http_request "POST" "/api/v1/auth/register" "$data")
-    local http_code=$(echo "$response" | tail -n1)
-
-    if [[ "$http_code" == "201" || "$http_code" == "200" ]]; then
-        assert_status "201" "$http_code" "User registration successful"
-    elif [[ "$http_code" == "409" ]]; then
-        log_warn "  User already exists, treating as pass"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        assert_status "201" "$http_code" "User registration"
-    fi
-}
-
-test_user_login() {
-    log_phase "Portal Test 3: User Login"
-
-    local data="{\"username\":\"${TEST_USERNAME}\",\"password\":\"${TEST_PASSWORD}\"}"
-    local response
-    response=$(http_request "POST" "/api/v1/auth/login" "$data")
-    local http_code=$(echo "$response" | tail -n1)
-    local body=$(echo "$response" | sed '$d')
-
-    assert_status "200" "$http_code" "User login"
-
-    JWT_TOKEN=$(echo "$body" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-    if [[ -z "$JWT_TOKEN" ]]; then
-        JWT_TOKEN=$(echo "$body" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
-    fi
-
-    if [[ -n "$JWT_TOKEN" ]]; then
-        log_info "  JWT Token obtained"
-    else
-        log_warn "  Could not extract JWT token"
-    fi
-}
-
-test_get_current_user() {
-    log_phase "Portal Test 4: Get Current User"
-
-    if [[ -z "${JWT_TOKEN:-}" ]]; then
-        log_warn "  Skipping - no JWT token"
-        return
-    fi
-
-    local response
-    response=$(http_request "GET" "/api/v1/auth/me" "" "$JWT_TOKEN")
-    local http_code=$(echo "$response" | tail -n1)
-    local body=$(echo "$response" | sed '$d')
-
-    assert_status "200" "$http_code" "Get current user"
-    assert_contains "$TEST_USERNAME" "$body" "Response contains username"
-}
-
-test_create_module() {
-    log_phase "Portal Test 5: Create Module"
-
-    if [[ -z "${JWT_TOKEN:-}" ]]; then
-        log_warn "  Skipping - no JWT token"
-        return
-    fi
-
-    local data="{\"name\":\"e2e-test-module\",\"description\":\"E2E test module\"}"
-    local response
-    response=$(http_request "POST" "/api/v1/modules" "$data" "$JWT_TOKEN")
-    local http_code=$(echo "$response" | tail -n1)
-
-    if [[ "$http_code" == "201" || "$http_code" == "200" || "$http_code" == "409" ]]; then
-        log_info "  PASS: Create module (HTTP $http_code)"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    elif [[ "$http_code" == "400" || "$http_code" == "403" ]]; then
-        log_info "  PASS: Create module returned $http_code (guest role restriction, expected)"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        assert_status "201" "$http_code" "Create module"
-    fi
-}
-
-test_create_project() {
-    log_phase "Portal Test 6: Create Project"
-
-    if [[ -z "${JWT_TOKEN:-}" ]]; then
-        log_warn "  Skipping - no JWT token"
-        return
-    fi
-
-    local data="{\"name\":\"e2e-test-project\",\"module_id\":1,\"config\":{\"description\":\"E2E test project\"}}"
-    local response
-    response=$(http_request "POST" "/api/v1/projects" "$data" "$JWT_TOKEN")
-    local http_code=$(echo "$response" | tail -n1)
-
-    if [[ "$http_code" == "201" || "$http_code" == "200" || "$http_code" == "409" ]]; then
-        log_info "  PASS: Create project (HTTP $http_code)"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    elif [[ "$http_code" == "400" || "$http_code" == "403" ]]; then
-        log_info "  PASS: Create project returned $http_code (guest role restriction, expected)"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        assert_status "201" "$http_code" "Create project"
-    fi
-}
-
-test_list_projects() {
-    log_phase "Portal Test 7: List Projects"
-
-    if [[ -z "${JWT_TOKEN:-}" ]]; then
-        log_warn "  Skipping - no JWT token"
-        return
-    fi
-
-    local response
-    response=$(http_request "GET" "/api/v1/projects" "" "$JWT_TOKEN")
-    local http_code=$(echo "$response" | tail -n1)
-
-    assert_status "200" "$http_code" "List projects"
-}
-
-test_list_applications() {
-    log_phase "Portal Test 8: List Applications"
-
-    if [[ -z "${JWT_TOKEN:-}" ]]; then
-        log_warn "  Skipping - no JWT token"
-        return
-    fi
-
-    local response
-    response=$(http_request "GET" "/api/v1/applications" "" "$JWT_TOKEN")
-    local http_code=$(echo "$response" | tail -n1)
-
-    if [[ "$http_code" == "200" || "$http_code" == "500" ]]; then
-        log_info "  PASS: List applications (HTTP $http_code)"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        assert_status "200" "$http_code" "List applications"
-    fi
-}
-
-test_list_clusters() {
-    log_phase "Portal Test 9: List Clusters"
-
-    if [[ -z "${JWT_TOKEN:-}" ]]; then
-        log_warn "  Skipping - no JWT token"
-        return
-    fi
-
-    local response
-    response=$(http_request "GET" "/api/v1/clusters" "" "$JWT_TOKEN")
-    local http_code=$(echo "$response" | tail -n1)
-
-    if [[ "$http_code" == "200" || "$http_code" == "500" ]]; then
-        log_info "  PASS: List clusters (HTTP $http_code)"
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    else
-        assert_status "200" "$http_code" "List clusters"
-    fi
-}
-
-# ======================== Main Entry Point ========================
-
-print_summary() {
-    echo ""
-    echo "=============================================="
-    echo "  Full E2E Test Summary"
-    echo "=============================================="
-    echo "  Total Tests: $((TESTS_PASSED + TESTS_FAILED))"
-    echo -e "  ${GREEN}Passed: ${TESTS_PASSED}${NC}"
-    echo -e "  ${RED}Failed: ${TESTS_FAILED}${NC}"
-    echo "=============================================="
-    echo ""
-
-    if [[ $TESTS_FAILED -eq 0 ]]; then
-        echo -e "${GREEN}All tests passed!${NC}"
-        return 0
-    else
-        echo -e "${RED}Some tests failed!${NC}"
-        return 1
-    fi
-}
-
-wait_for_portal() {
-    log_step "Waiting for Portal to be ready..."
-    local retries=0
-    while [[ $retries -lt 30 ]]; do
-        if curl -s "${PORTAL_URL}/healthz" > /dev/null 2>&1; then
-            log_info "Portal is ready!"
-            break
-        fi
-        retries=$((retries + 1))
-        sleep 2
-    done
-
-    if [[ $retries -eq 30 ]]; then
-        log_error "Portal did not become ready in time"
-        exit 1
-    fi
-}
-
-main() {
-    echo "=============================================="
-    echo "  Kumquat Demo Full E2E Test Suite"
-    echo "=============================================="
-    echo "  Portal URL: ${PORTAL_URL}"
-    echo ""
-
-    # ======================== Infrastructure Tests ========================
-    test_clusters_exist
-    test_cert_manager
-    test_hub_components
-    test_sub_agents
-    test_managedclusters
-    test_addons
-
-    # ======================== Portal API Tests ========================
-    wait_for_portal
-    test_portal_health
-    test_user_register
-    test_user_login
-    test_get_current_user
-    test_create_module
-    test_create_project
-    test_list_projects
-    test_list_applications
-    test_list_clusters
-
-    # Print summary
-    print_summary
-}
-
-main "$@"
+for tool in curl kubectl kind go python3; do command -v "${tool}" >/dev/null || fail "missing ${tool}"; done
+for cluster in kumquat-hub; do
+  kind get clusters | grep -Fxq "${cluster}" || fail "missing demo cluster ${cluster}"
+done
+curl --fail --silent "${API_URL}/readyz" >/dev/null || fail "API is not ready"
+kubectl --context "${HUB_CONTEXT}" -n "${NAMESPACE}" wait --for=condition=Ready pod/mysql-0 --timeout=180s
+kubectl --context "${HUB_CONTEXT}" -n "${NAMESPACE}" rollout status deployment/engine-manager --timeout=180s
+kubectl --context "${HUB_CONTEXT}" -n "${NAMESPACE}" rollout status deployment/engine-scheduler --timeout=180s
+kubectl --context "${HUB_CONTEXT}" -n "${NAMESPACE}" rollout status deployment/engine-hub-agent --timeout=180s
+agent_args="$(kubectl --context "${HUB_CONTEXT}" -n "${NAMESPACE}" get deployment engine-hub-agent -o jsonpath='{.spec.template.spec.containers[0].args}')"
+[[ "${agent_args}" != *bootstrap-token* ]] || fail "Hub agent exposes bootstrap token through Pod arguments"
+[[ -z "$(kubectl --context "${HUB_CONTEXT}" get managedcluster kumquat-hub -o jsonpath='{.spec.secretRef.name}')" ]] || fail "local Hub cluster unexpectedly uses a credential Secret"
+[[ "$(kubectl --context "${HUB_CONTEXT}" get managedcluster kumquat-hub -o jsonpath='{.spec.apiServer}')" == "in-cluster://" ]] || fail "local Hub cluster lacks the explicit in-cluster marker"
+
+ADMIN_USERNAME="$(secret_value bootstrap-admin-username)"
+ADMIN_PASSWORD="$(secret_value bootstrap-admin-password)"
+request POST /api/v1/auth/login "{\"username\":\"${ADMIN_USERNAME}\",\"password\":\"${ADMIN_PASSWORD}\"}" 200
+TOKEN="$(json_get data.token <"${BODY_FILE}")"
+[[ -n "${TOKEN}" ]] || fail "bootstrap admin login returned no token"
+umask 077
+printf 'header = "Authorization: Bearer %s"\n' "${TOKEN}" >"${AUTH_CONFIG}"
+log "authenticated as bootstrap admin"
+
+suffix="$(date +%s)"
+request POST /api/v1/modules "{\"name\":\"e2e-module-${suffix}\"}" 200
+MODULE_ID="$(json_get data.id <"${BODY_FILE}")"
+request POST /api/v1/projects "{\"name\":\"e2e-project-${suffix}\",\"moduleId\":\"${MODULE_ID}\"}" 200
+PROJECT_ID="$(json_get data.id <"${BODY_FILE}")"
+
+go build -o "${KUMCTL}" "${PROJECT_ROOT}/kumctl/cmd/kumctl"
+cat >"${TMP_DIR}/workspace.json" <<JSON
+{"name":"e2e-workspace-${suffix}","projectId":"${PROJECT_ID}","desired":{"workspace":{"namespace":"e2e-${suffix}","clusterMatchLabels":{"kumquat.io/demo-cluster":"hub"}}}}
+JSON
+"${KUMCTL}" --server "${API_URL}" --token "${TOKEN}" --file "${TMP_DIR}/workspace.json" create workspaces >"${TMP_DIR}/workspace-accepted.json"
+WORKSPACE_ID="$(json_get resourceId <"${TMP_DIR}/workspace-accepted.json")"
+wait_operation "$(json_get id <"${TMP_DIR}/workspace-accepted.json")" "${TMP_DIR}/workspace-operation.json"
+"${KUMCTL}" --server "${API_URL}" --token "${TOKEN}" get workspaces "${WORKSPACE_ID}" >"${TMP_DIR}/workspace-record.json"
+[[ "$(json_get projectId <"${TMP_DIR}/workspace-record.json")" == "${PROJECT_ID}" ]] || fail "workspace project relation mismatch"
+wait_for_resource workspace "e2e-workspace-${suffix}"
+wait_for_resource namespace "e2e-${suffix}"
+
+cat >"${TMP_DIR}/application.json" <<JSON
+{"name":"e2e-application-${suffix}","workspaceId":"${WORKSPACE_ID}","desired":{"application":{"workload":{"apiVersion":"apps/v1","kind":"Deployment"},"replicas":1,"template":{"labels":{"demo":"strict-e2e"},"containers":[{"name":"app","image":"nginx:1.27-alpine"}]}}}}
+JSON
+"${KUMCTL}" --server "${API_URL}" --token "${TOKEN}" --file "${TMP_DIR}/application.json" create applications >"${TMP_DIR}/application-accepted.json"
+APPLICATION_ID="$(json_get resourceId <"${TMP_DIR}/application-accepted.json")"
+wait_operation "$(json_get id <"${TMP_DIR}/application-accepted.json")" "${TMP_DIR}/application-operation.json"
+"${KUMCTL}" --server "${API_URL}" --token "${TOKEN}" get applications "${APPLICATION_ID}" >"${TMP_DIR}/application-record.json"
+[[ "$(json_get parentId <"${TMP_DIR}/application-record.json")" == "${WORKSPACE_ID}" ]] || fail "application workspace relation mismatch"
+
+wait_for_resource application "e2e-application-${suffix}" "e2e-${suffix}"
+[[ "$(kubectl --context "${HUB_CONTEXT}" get workspace "e2e-workspace-${suffix}" -o jsonpath='{.metadata.labels.kumquat\.io/workspace-id}')" == "${WORKSPACE_ID}" ]] || fail "Engine Workspace identity label mismatch"
+[[ "$(kubectl --context "${HUB_CONTEXT}" -n "e2e-${suffix}" get application "e2e-application-${suffix}" -o jsonpath='{.metadata.labels.kumquat\.io/application-id}')" == "${APPLICATION_ID}" ]] || fail "Engine Application identity label mismatch"
+[[ "$(kubectl --context "${HUB_CONTEXT}" -n "e2e-${suffix}" get application "e2e-application-${suffix}" -o jsonpath='{.metadata.labels.kumquat\.io/workspace-id}')" == "${WORKSPACE_ID}" ]] || fail "Engine Application workspace label mismatch"
+
+wait_for_resource deployment "e2e-application-${suffix}" "e2e-${suffix}"
+selector_id="$(kubectl --context "${HUB_CONTEXT}" -n "e2e-${suffix}" get deployment "e2e-application-${suffix}" -o jsonpath='{.spec.selector.matchLabels.kumquat\.io/application-id}')"
+template_id="$(kubectl --context "${HUB_CONTEXT}" -n "e2e-${suffix}" get deployment "e2e-application-${suffix}" -o jsonpath='{.spec.template.metadata.labels.kumquat\.io/application-id}')"
+[[ "${selector_id}" == "${APPLICATION_ID}" && "${template_id}" == "${APPLICATION_ID}" ]] || fail "immutable workload identity labels mismatch"
+for mutable in kumquat.io/module-id kumquat.io/project-id; do
+  selector_and_template="$(kubectl --context "${HUB_CONTEXT}" -n "e2e-${suffix}" get deployment "e2e-application-${suffix}" -o jsonpath='{.spec.selector.matchLabels}{.spec.template.metadata.labels}')"
+  [[ "${selector_and_template}" != *"${mutable}"* ]] || fail "mutable ownership label leaked into workload selector/template"
+done
+
+table_count="$(kubectl --context "${HUB_CONTEXT}" -n "${NAMESPACE}" exec mysql-0 -- sh -c 'MYSQL_PWD="$MYSQL_PASSWORD" mysql -u"$MYSQL_USER" -D"$MYSQL_DATABASE" -Nse "SELECT COUNT(*) FROM resource_records"')"
+[[ "${table_count}" -ge 2 ]] || fail "MySQL does not contain API business resources"
+api_sql_type="$(kubectl --context "${HUB_CONTEXT}" -n "${NAMESPACE}" get deploy api -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="KUMQUAT_API_SQL_TYPE")].value}')"
+[[ "${api_sql_type}" == mysql ]] || fail "API deployment is not configured for MySQL"
+
+heartbeat_before="$(kubectl --context "${HUB_CONTEXT}" get managedcluster kumquat-hub -o jsonpath='{.status.lastKeepAliveTime}')"
+kubectl --context "${HUB_CONTEXT}" -n "${NAMESPACE}" rollout restart deployment/engine-manager deployment/engine-hub-agent >/dev/null
+kubectl --context "${HUB_CONTEXT}" -n "${NAMESPACE}" rollout status deployment/engine-manager --timeout=180s
+kubectl --context "${HUB_CONTEXT}" -n "${NAMESPACE}" rollout status deployment/engine-hub-agent --timeout=180s
+heartbeat_after="${heartbeat_before}"
+for _ in $(seq 1 30); do
+  heartbeat_after="$(kubectl --context "${HUB_CONTEXT}" get managedcluster kumquat-hub -o jsonpath='{.status.lastKeepAliveTime}')"
+  [[ -n "${heartbeat_after}" && "${heartbeat_after}" != "${heartbeat_before}" ]] && break
+  sleep 2
+done
+[[ -n "${heartbeat_after}" && "${heartbeat_after}" != "${heartbeat_before}" ]] || fail "Hub heartbeat did not resume after manager/agent restart"
+wait_for_resource deployment "e2e-application-${suffix}" "e2e-${suffix}"
+
+kubectl --context "${HUB_CONTEXT}" -n "${NAMESPACE}" rollout restart deployment/api >/dev/null
+kubectl --context "${HUB_CONTEXT}" -n "${NAMESPACE}" rollout status deployment/api --timeout=180s
+api_ready=false
+for _ in $(seq 1 30); do
+  if curl --fail --silent "${API_URL}/readyz" >/dev/null; then
+    api_ready=true
+    break
+  fi
+  sleep 2
+done
+[[ "${api_ready}" == true ]] || fail "API not ready after restart"
+request POST /api/v1/auth/login "{\"username\":\"${ADMIN_USERNAME}\",\"password\":\"${ADMIN_PASSWORD}\"}" 200
+TOKEN="$(json_get data.token <"${BODY_FILE}")"
+printf 'header = "Authorization: Bearer %s"\n' "${TOKEN}" >"${AUTH_CONFIG}"
+for target in "modules/${MODULE_ID}" "projects/${PROJECT_ID}" "workspaces/${WORKSPACE_ID}" "applications/${APPLICATION_ID}"; do
+  request GET "/api/v1/${target}" "" 200
+done
+
+log "PASS: authenticated business flow, Engine projection, immutable labels, MySQL persistence, token-free Engine restart, and API restart"
