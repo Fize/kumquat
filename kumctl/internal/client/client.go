@@ -61,7 +61,13 @@ func (c *Client) Do(ctx context.Context, method, path string, body []byte, idemp
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, fmt.Errorf("invalid API response (%d): %s", resp.StatusCode, string(raw))
 	}
-	if resp.StatusCode >= 400 || out.Code != 0 {
+	if resp.StatusCode >= 400 {
+		if out.Message == "" {
+			out.Message = http.StatusText(resp.StatusCode)
+		}
+		return nil, fmt.Errorf("API error HTTP %d: %s", resp.StatusCode, out.Message)
+	}
+	if out.Code != 0 {
 		return nil, fmt.Errorf("API error %d: %s", out.Code, out.Message)
 	}
 	return &out, nil
@@ -80,6 +86,9 @@ func (c *Client) Wait(ctx context.Context, id string, interval time.Duration) (*
 		case "succeeded":
 			return &op, nil
 		case "failed":
+			if op.Error == "" {
+				op.Error = "operation failed"
+			}
 			return &op, errors.New(op.Error)
 		}
 		select {
