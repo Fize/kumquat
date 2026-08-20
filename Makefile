@@ -1,4 +1,4 @@
-.PHONY: build test test-api-mysql demo-up demo-test demo-down clean help engine armory
+.PHONY: build test test-api-mysql test-kumctl-e2e demo-up demo-test demo-down clean help engine armory
 
 help: ## Show this help
 	@echo "Usage: make [target]"
@@ -14,6 +14,9 @@ test: ## Run engine tests
 
 test-api-mysql: ## Run all API tests against an isolated Docker MySQL 8
 	$(MAKE) -C api test-mysql
+
+test-kumctl-e2e: ## Run one independent kumctl case for every included API operation
+	bash kumctl/test/e2e_api_test.sh
 
 demo-up: ## Build and deploy the local Kind demo with MySQL
 	./demo/demo.sh up
