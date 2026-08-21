@@ -1,56 +1,17 @@
-# kumctl
+# Kumctl
 
-`kumctl` is the API-only terminal and agent entry point. It talks to the
-Kumquat API gateway and never reads a Kubernetes kubeconfig or imports Engine
-client libraries.
+[English](README_en.md)
 
-Global flags may appear before or after the command (both forms are accepted):
-
-```bash
-export KUMQUAT_API_URL=http://127.0.0.1:8080
-kumctl --token "$KUMQUAT_TOKEN" list applications
-```
-
-## Authentication
-
-Login is the only authentication operation exposed by the CLI. Registration,
-`auth/me`, and `auth/change-password` deliberately remain API-only.
+Kumquat 命令行工具。`kumctl` 只访问 Kumquat API，不读取 Kubernetes
+kubeconfig，也不依赖 Engine 或 client-go。
 
 ```bash
-kumctl --server "$KUMQUAT_API_URL" login --username alice --password secret
-kumctl --server "$KUMQUAT_API_URL" auth login --file login.json
+kumctl --server http://127.0.0.1:8080 --token "$KUMQUAT_TOKEN" list applications
+kumctl --wait --file application.json create applications
+kumctl --wait adopt clusters cluster_0123
 ```
 
-## Commands
-
-The resource names accept singular or plural forms. Every API CRUD route is
-available for `users`, `modules`, `projects`, `workspaces`, and
-`applications`:
-
-```bash
-kumctl --file module.json create module
-kumctl get module mod_123
-kumctl --file module-update.json update modules mod_123
-kumctl delete project prj_123
-```
-
-Read-only API resources are intentionally read-only in kumctl as well:
-`roles` support `list`/`get`, `operations` support `get`, and `clusters`
-support `list`/`get` plus `adopt`.
-
-API-specific read and adoption actions are also available:
-
-```bash
-kumctl --children get module mod_root
-kumctl --permissions get role 1
-kumctl --module-id mod_root --page 1 --size 50 list projects
-kumctl adopt cluster cluster_123
-kumctl --file adopt.json adopt workspace ws_123
-kumctl --file adopt.json adopt application app_123
-```
-
-Mutations automatically receive an idempotency key. Use `--idempotency-key`
-to supply a stable key, and `--wait` to poll an asynchronous operation until
-it succeeds or fails. All output is JSON. Server and token settings come from
-flags, `KUMQUAT_API_URL`, `KUMQUAT_TOKEN`, or the context selected in
-`$KUMQUAT_CONFIG`.
+所有输出均为 JSON。写操作自动发送 `Idempotency-Key`；可以用
+`--idempotency-key` 固定该值，并用 `--wait` 等待 operation 完成。连接信息可
+由 `KUMQUAT_API_URL`、`KUMQUAT_TOKEN` 或 `$KUMQUAT_CONFIG` 指向的 context
+配置提供。

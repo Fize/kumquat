@@ -1,40 +1,42 @@
 # Armory
 
-Base Docker image builder for Kumquat, providing unified runtime base images for all subprojects.
+[English](README_en.md)
 
-## Directory Structure
+Kumquat 基础 Docker 镜像构建，为各子项目提供统一的运行时基础镜像。
+
+## 目录结构
 
 ```
 docker/
-├── alpine/           Alpine base image (bash, curl, jq, tini, automatic USTC mirror switching)
+├── alpine/           Alpine 基础镜像 (bash, curl, jq, tini, USTC 镜像自动切换)
 │   ├── Dockerfile.template
 │   └── init.sh
-├── golang/            Go image based on Alpine
+├── golang/           基于 Alpine 的 Go 镜像
 │   └── Dockerfile.template
-├── node/              Node.js image based on Alpine
+├── node/             基于 Alpine 的 Node.js 镜像
 │   └── Dockerfile.template
-├── python/            Python image based on Alpine
+├── python/           基于 Alpine 的 Python 镜像
 │   └── Dockerfile.template
-├── kubectl/          DevOps tools: kubectl, helm, kustomize
+├── kubectl/          DevOps 工具：kubectl, helm, kustomize
 │   └── Dockerfile.template
-├── builder/           Build tools: gcc, make, cmake, etc.
+├── builder/          构建工具：gcc, make, cmake 等
 │   └── Dockerfile.template
-├── dind/             Docker-in-Docker, for CI/CD
+├── dind/             Docker-in-Docker，用于 CI/CD
 │   ├── Dockerfile.template
 │   └── entrypoint.sh
-├── rust/              Rust image based on Alpine
+├── rust/             基于 Alpine 的 Rust 镜像
 │   └── Dockerfile.template
-└── java/              OpenJDK image based on Alpine
+└── java/             基于 Alpine 的 OpenJDK 镜像
     └── Dockerfile.template
 ```
 
-## Quick Start
+## 快速开始
 
 ```bash
-# Build all images (using default versions)
+# 构建所有镜像（使用默认版本）
 make all
 
-# Build a single image
+# 构建单个镜像
 make alpine
 make golang
 make node
@@ -45,53 +47,53 @@ make dind
 make rust
 make java
 
-# Build a specific version
+# 构建指定版本
 make alpine ALPINE_VERSION=3.20.5
 make golang GO_VERSION=1.23.6
 make kubectl KUBECTL_VERSION=1.30.0 HELM_VERSION=3.15.0
 
-# Push to image registry
+# 推送到镜像仓库
 REPO=yourrepo make push-all
 
-# View available images
+# 查看可用镜像
 make list
 ```
 
-## Image List
+## 镜像列表
 
-### Base Images
+### 基础镜像
 
-| Image | Base | Features |
-|-------|------|----------|
-| `alpine` | Alpine Linux | bash, curl, jq, tini (PID 1), automatic USTC mirror switching |
+| 镜像 | 基础 | 特性 |
+|------|------|------|
+| `alpine` | Alpine Linux | bash, curl, jq, tini (PID 1), USTC 镜像自动切换 |
 
-### Language Runtimes
+### 语言运行时
 
-| Image | Base | Features |
-|-------|------|----------|
-| `golang` | armory/alpine | Go toolchain |
+| 镜像 | 基础 | 特性 |
+|------|------|------|
+| `golang` | armory/alpine | Go 工具链 |
 | `node` | armory/alpine | Node.js + npm |
 | `python` | armory/alpine | Python 3 + pip, requests, pyyaml, jinja2 |
 | `rust` | armory/alpine | Rust + cargo, cargo-audit, cargo-watch |
 | `java` | armory/alpine | OpenJDK + Maven + Gradle |
 
-### DevOps Tools
+### DevOps 工具
 
-| Image | Base | Features |
-|-------|------|----------|
-| `kubectl` | armory/alpine | kubectl, helm, kustomize, yq, bash completion |
+| 镜像 | 基础 | 特性 |
+|------|------|------|
+| `kubectl` | armory/alpine | kubectl, helm, kustomize, yq, bash 补全 |
 | `dind` | armory/alpine | Docker-in-Docker, buildx, compose |
 
-### Build Tools
+### 构建工具
 
-| Image | Base | Features |
-|-------|------|----------|
-| `builder` | armory/alpine | gcc, g++, make, cmake, autoconf, openssl-dev, etc. |
+| 镜像 | 基础 | 特性 |
+|------|------|------|
+| `builder` | armory/alpine | gcc, g++, make, cmake, autoconf, openssl-dev 等 |
 
-## Default Versions
+## 默认版本
 
-| Image | Version |
-|-------|---------|
+| 镜像 | 版本 |
+|------|------|
 | Alpine | 3.21.3 |
 | Go | 1.24.4 |
 | Node.js | 22.15.0 |
@@ -103,13 +105,13 @@ make list
 | Rust | 1.85.0 |
 | OpenJDK | 21 |
 
-## Design Choices
+## 设计选择
 
-- **tini** is preferred over s6-overlay: lightweight PID 1 for zombie process reaping only.
-- **Templating**: one template per image type, `Makefile` handles variable substitution.
-- **`# TAGS` directive**: Adding `# TAGS v1 latest` at the top of a Dockerfile allows multiple tags.
-- **Incremental builds**: `bootstrap.sh` only builds images whose Dockerfile has changed.
+- **tini** 优于 s6-overlay：仅用于僵尸进程回收的轻量级 PID 1。
+- **模板化**：每种镜像类型一个模板，`Makefile` 负责变量替换。
+- **`# TAGS` 指令**：在 Dockerfile 顶部添加 `# TAGS v1 latest` 可打多个标签。
+- **增量构建**：`bootstrap.sh` 仅构建 Dockerfile 发生变更的镜像。
 
-## License
+## 许可证
 
 Apache License 2.0

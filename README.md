@@ -1,104 +1,106 @@
 # Kumquat
 
-[中文](README_zh.md)
+[English](README_en.md)
 
-Kumquat is a cloud-native multi-cluster application management platform designed to simplify application distribution, scheduling, and management across multiple Kubernetes clusters.
+Kumquat 是一个云原生多集群应用管理平台，旨在简化跨多个 Kubernetes 集群的应用分发、调度和管理。
 
-## Features
+## 特性
 
-- **Multi-Cluster Management**: Manage dozens of Kubernetes clusters from a single control plane
-- **Unified Application Distribution**: Write once, deploy everywhere with standard K8s workloads
-- **Intelligent Scheduling**: Advanced placement engine with Spread, BinPacking, and Affinity support
-- **Dual Connection Mode**: Support both Hub (pull) and Edge (push) cluster connectivity
-- **Policy-Based Overrides**: Customize configurations per cluster without duplicating YAMLs
-- **Global Status Aggregation**: Real-time visibility into application health across all clusters
-- **Extensible Addon System**: Plugin architecture for MCS, monitoring, and custom extensions
-  - Built-in **Submariner Addon**: Cross-cluster service discovery and networking
-  - Multiple network modes: IPsec tunnel, WireGuard, VXLAN, flat network
-  - Automated ServiceExport/ServiceImport management
+- **多集群管理**：从单一控制平面管理数十个 Kubernetes 集群
+- **统一应用分发**：一次编写，到处部署，使用标准 K8s 工作负载
+- **智能调度**：根据 Spread、BinPacking 和 Affinity 等策略选择目标集群
+- **双重连接模式**：同时支持 Hub 直连和 Edge 反向连接
+- **基于策略的覆盖**：无需复制 YAML 即可按集群自定义配置
+- **全局状态聚合**：实时查看所有集群中的应用健康状态
+- **可扩展的插件系统**：支持 MCS、监控和自定义扩展的插件架构
+  - 内置 **Submariner Addon**：提供跨集群服务发现和网络互通能力
+  - 支持多种网络模式：IPsec 隧道、WireGuard、VXLAN、扁平网络
+  - 自动化 ServiceExport/ServiceImport 管理
 
-## Architecture
+## 架构
 
-The API stores its authoritative business desired state and relationships in SQL.
-`apiserver/config/config.yaml` keeps SQLite only as an explicit local-development option.
-Kubernetes deployments and the Kind demo use MySQL credentials from a Secret and do
-not mount a SQLite database.
+Kumquat 采用 Hub-Spoke 架构来高效管理多集群环境。
+用户通过 Kumquat API 或 `kumctl` 提交应用、集群和工作空间配置；Engine 在 Hub
+集群中完成调度、分发和状态聚合，并通过 Hub 直连或 Edge 隧道管理成员集群。
 
-Kumquat adopts a Hub-Spoke architecture to manage multi-cluster environments efficiently.
+![架构图](docs/images/architecture.drawio.png)
 
-![Architecture](docs/images/architecture.drawio.png)
+### 组件
 
-### Components
+| 组件 | 子项目 | 描述 |
+|------|--------|------|
+| **Manager** | Engine | 运行在 Hub 集群上的中央控制平面 |
+| **调度器** | Engine | 根据策略和集群状态选择目标集群 |
+| **Agent** | Engine | 运行在 Edge 集群上，维护隧道连接 |
+| **隧道服务器** | Engine | 基于 WebSocket 的反向隧道，用于 Edge 集群连接 |
+| **API** | API | 用户入口、认证授权、项目/模块和资源操作 |
+| **Kumctl** | Kumctl | 命令行运维工具 |
 
-| Component | Sub-project | Description |
-|-----------|-------------|-------------|
-| **Manager** | Engine | Central control plane running on Hub cluster |
-| **Scheduler** | Engine | Multi-cluster placement engine with plugin-based Filter/Score architecture |
-| **Agent** | Engine | Runs on Edge clusters, maintains tunnel connection |
-| **Tunnel Server** | Engine | WebSocket-based reverse tunnel for Edge cluster connectivity |
-| **API** | API | User management, authentication and authorization API |
-| **Kumctl** | Kumctl | Command-line tool for cluster management |
+### 连接模式
 
-### Connection Modes
+| 模式 | 方向 | 使用场景 |
+|------|------|----------|
+| **Hub** | Manager → 集群 | 可从 Hub 访问的集群（同一 VPC、VPN） |
+| **Edge** | Agent → Manager | 位于 NAT/防火墙后的集群，无入站访问 |
 
-| Mode | Direction | Use Case |
-|------|-----------|----------|
-| **Hub** | Manager → Cluster | Clusters accessible from Hub (same VPC, VPN) |
-| **Edge** | Agent → Manager | Clusters behind NAT/firewall, no inbound access |
+## 子项目
 
-## Sub-projects
+| 目录 | 名称 | 说明 |
+|------|------|------|
+| [engine/](engine/) | Engine | 核心系统：多集群应用分发、调度和管理 |
+| [armory/](armory/) | Armory | 基础 Docker 镜像构建（Alpine、Go、Node） |
+| [apiserver/](apiserver/) | API | 面向用户的 API Gateway：管理身份、项目/模块和资源操作 |
+| [kumctl/](kumctl/) | Kumctl | 仅通过 API 交互的用户与 Agent 命令行入口 |
 
-| Directory | Name | Description |
-|-----------|------|-------------|
-| [engine/](engine/) | Engine | Core system: multi-cluster application distribution, scheduling and management |
-| [armory/](armory/) | Armory | Base Docker image builds (Alpine, Go, Node) |
-| [apiserver/](apiserver/) | API | Business API gateway and desired-state authority projecting execution to Engine |
-| [kumctl/](kumctl/) | Kumctl | API-only command-line entry point for users and agents |
+## 快速开始
 
-## Quick Start
-
-Database-backed automated tests and the local Kind demo use MySQL 8. SQLite is
-supported only by the explicit local-development config in `apiserver/config/config.yaml`.
+本地 Kind Demo 会启动 Hub 集群、Engine、API 和示例工作负载，用于验证主要链路。
 
 ```bash
-make test-api-mysql
 make demo-up
 make demo-test
 make demo-down
 ```
 
-### Prerequisites
+### 前提条件
 
 - Go 1.22+
 - Docker
-- Kind (for local testing)
+- Kind（用于本地测试）
 - kubectl
 
-### Installation
+### 安装
 
 ```bash
-# Clone the repository
+# 克隆仓库
 git clone https://github.com/fize/kumquat.git
 cd kumquat
 
-# Build engine binaries
+# 构建 engine 二进制文件
 make -C engine build
 
-# Build base images
+# 构建 API 服务
+make -C apiserver build
+
+# 构建 kumctl
+mkdir -p kumctl/build
+go build -C kumctl -o build/kumctl ./cmd/kumctl
+
+# 构建基础镜像
 make -C armory all
 ```
 
-### Deploy Manager
+### 部署 Manager
 
 ```bash
-# Install CRDs to your cluster
+# 安装 CRD 到集群
 kubectl apply -f engine/config/crd/bases/
 
-# Using Helm
+# 使用 Helm
 helm install engine-manager charts/manager -n kumquat-system --create-namespace
 ```
 
-### Register a Cluster (Hub Mode)
+### 注册集群（Hub 模式）
 
 ```yaml
 apiVersion: storage.kumquat.io/v1alpha1
@@ -115,7 +117,7 @@ spec:
     name: prod-east-credentials
 ```
 
-### Deploy an Application
+### 部署应用
 
 ```yaml
 apiVersion: apps.kumquat.io/v1alpha1
@@ -149,11 +151,17 @@ spec:
           values: ["production"]
 ```
 
-## Built-in Addons
+## 内置 Addon
 
-### Submariner - Cross-Cluster Service Discovery
+| Addon | 用途 |
+|-------|------|
+| **mcs-lighthouse** | 基于 Submariner 的跨集群服务发现和网络互通 |
+| **kruise-rollout** | 跨集群渐进式发布协调 |
+| **victoriametrics** | 多集群监控数据采集和汇聚 |
 
-Kumquat includes a built-in **Submariner Addon** (mcs-lighthouse) for cross-cluster service discovery and networking.
+### Submariner 示例
+
+Kumquat 内置 **Submariner Addon** (mcs-lighthouse)，提供跨集群服务发现和网络互通能力。
 
 ```yaml
 apiVersion: storage.kumquat.io/v1alpha1
@@ -168,31 +176,32 @@ spec:
       enabled: true
 ```
 
-Network modes: IPsec Tunnel (default), Flat Network, VXLAN.
+网络模式：IPsec 隧道（默认）、扁平网络、VXLAN。
 
-> **Important**: Flat network mode requires users to configure underlying network routing. See [Addon Design](docs/en/addon.md) for details.
+> **重要**：扁平网络模式需要用户自行配置底层网络路由。详见 [Addon 扩展设计](docs/zh/addon.md)。
 
-## Documentation
+## 文档
 
-| Document | Description |
-|----------|-------------|
-| [Architecture](docs/en/architecture.md) | System architecture and design |
-| [Scheduler Design](docs/en/scheduler.md) | Multi-cluster scheduling framework |
-| [Topology Spread](docs/en/topology_spread.md) | Cross-zone/region workload distribution |
-| [Edge Cluster](docs/en/edge.md) | Tunnel-based Edge cluster management |
-| [API Reference](docs/en/api.md) | CRD specifications and examples |
-| [Addon Design](docs/en/addon.md) | Plugin architecture and extensions |
+| 文档 | 描述 |
+|------|------|
+| [文档中心](docs/README.md) | 中文技术文档入口 |
+| [架构设计](docs/zh/architecture.md) | 系统整体架构和设计 |
+| [调度器设计](docs/zh/scheduler.md) | 多集群调度框架 |
+| [拓扑分布](docs/zh/topology_spread.md) | 跨区域/可用区工作负载分布 |
+| [Edge 集群](docs/zh/edge.md) | 基于隧道的 Edge 集群管理 |
+| [API 参考](docs/zh/api.md) | CRD 规范和示例 |
+| [Addon 扩展设计](docs/zh/addon.md) | 插件架构和扩展机制 |
 
-## Testing
+## 测试
 
 ```bash
-# Unit tests
+# 单元测试
 make -C engine test
 
-# E2E tests with Kind
+# 使用 Kind 运行 E2E 测试
 make -C engine e2e-kind
 ```
 
-## License
+## 许可证
 
 Apache License 2.0

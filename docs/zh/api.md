@@ -1,6 +1,6 @@
 # API 参考
 
-[English](api.md)
+[English](../en/api.md)
 
 本文档提供 Kumquat Engine 所有 Custom Resource Definition (CRD) 的详细规范和使用示例。
 

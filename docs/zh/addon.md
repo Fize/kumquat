@@ -1,6 +1,6 @@
 # Addon 扩展设计
 
-[English](addon.md)
+[English](../en/addon.md)
 
 ## 概述
 

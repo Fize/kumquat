@@ -1,18 +1,48 @@
-# Kumquat Engine Architecture
+# Kumquat Architecture
 
 [中文文档](../zh/architecture.md)
 
 ## Overview
 
-Kumquat Engine is a cloud-native multi-cluster application management platform that adopts a **Hub-Spoke** architecture model to manage multiple Kubernetes clusters. This document details Kumquat Engine's architecture design, core components, data flow, and key implementation details.
+Kumquat is a cloud-native multi-cluster application management platform that adopts a **Hub-Spoke** architecture model to manage multiple Kubernetes clusters. This document explains the responsibility boundaries between the user entry points, Kumquat API, Engine control plane, and member clusters.
 
 ## Architecture Overview
 
 ![Architecture](../images/architecture.drawio.png)
 
+Kumquat is organized into four layers:
+
+| Layer | Responsibility |
+|-------|----------------|
+| User entry points | Users and automation manage applications, clusters, workspaces, and project resources through `kumctl` or HTTP APIs |
+| Kumquat API | Handles authentication, authorization, project/module organization, idempotent operations, and user-facing resource APIs |
+| Engine control plane | Runs in the Hub cluster and handles scheduling, distribution, Addon coordination, and status aggregation |
+| Member clusters | Run the actual workloads; Hub clusters are accessed directly, while Edge clusters connect back through an Agent tunnel |
+
 ## Core Components
 
-### 1. ApplicationReconciler
+### 1. Kumquat API
+
+Kumquat API is the unified entry point for users and automation.
+
+**Key Responsibilities:**
+- Manage users, roles, and permissions
+- Organize projects, modules, and resource hierarchy
+- Accept operations for applications, clusters, workspaces, and related resources
+- Provide idempotency and operation status for write requests
+- Project user intent into Engine resources that the control plane can execute
+
+### 2. Engine Manager
+
+Engine Manager runs in the Hub cluster and is the execution core of the multi-cluster control plane.
+
+**Key Responsibilities:**
+- Watch Application, ManagedCluster, Workspace, and related resources
+- Coordinate application scheduling, workload distribution, and status aggregation
+- Manage Addon lifecycle
+- Provide the reverse tunnel endpoint used by Edge clusters
+
+### 3. ApplicationReconciler
 
 ApplicationReconciler is Kumquat Engine's core controller, responsible for managing the complete lifecycle of Application CRs.
 
@@ -26,7 +56,7 @@ ApplicationReconciler is Kumquat Engine's core controller, responsible for manag
 
 ![Application Reconciler](../images/reconciler_flow.drawio.png)
 
-### 2. Scheduler
+### 4. Scheduler
 
 The Scheduler adopts a plugin-based architecture similar to Kubernetes Scheduler Framework.
 
@@ -50,65 +80,14 @@ The Scheduler adopts a plugin-based architecture similar to Kubernetes Scheduler
 | Resource | Score | Score by resource utilization (LeastAllocated/MostAllocated strategies) |
 | TopologySpread | Score | Prefer topology domains with fewer replicas (optional, disabled by default) |
 
-**Data Structures:**
+### 5. ClientManager
 
-```go
-// ClusterInfo contains cluster scheduling information
-type ClusterInfo struct {
-    Name           string
-    Labels         map[string]string
-    Allocatable    corev1.ResourceList  // Allocatable resources
-    Requested      corev1.ResourceList  // Requested resources
-    State          ClusterState         // Ready/NotReady
-    ConnectionMode ConnectionMode       // Hub/Edge
-}
-
-// SchedulingContext holds the scheduling context
-type SchedulingContext struct {
-    Application    *appsv1alpha1.Application
-    Clusters       []*ClusterInfo
-    FilteredOut    map[string]string   // Filtered clusters and reasons
-    Scores         map[string]int64    // Cluster scores
-}
-```
-
-### 3. ClientManager
-
-ClientManager is one of the most complex components in Kumquat Engine, responsible for managing Kubernetes client connections to all member clusters.
+ClientManager manages Kubernetes client connections to member clusters and chooses the correct access path for each cluster.
 
 **Key Features:**
 - Supports both Hub and Edge connection modes
 - Creates and caches clients on-demand
 - Handles connection failures with graceful retry
-
-**Implementation:**
-
-```go
-// ClientManager interface
-type ClientManager interface {
-    // GetClient returns the client for specified cluster
-    GetClient(clusterName string) (client.Client, error)
-    
-    // GetRESTConfig returns REST config (for dynamic clients)
-    GetRESTConfig(clusterName string) (*rest.Config, error)
-}
-
-// Internal implementation selects strategy based on ConnectionMode:
-
-func (m *clientManager) GetClient(name string) (client.Client, error) {
-    cluster := m.getCluster(name)
-    
-    switch cluster.Spec.ConnectionMode {
-    case ConnectionModeHub:
-        // Hub mode: direct connection via kubeconfig/token
-        return m.buildDirectClient(cluster)
-        
-    case ConnectionModeEdge:
-        // Edge mode: proxy requests through Tunnel
-        return m.buildTunnelClient(cluster)
-    }
-}
-```
 
 **Hub Mode Connection:**
 
@@ -128,9 +107,9 @@ Manager ◄───────────────────────
          Member Cluster API Server
 ```
 
-### 4. TunnelServer
+### 6. TunnelServer
 
-TunnelServer is based on [remotedialer](https://github.com/rancher/remotedialer), providing reverse tunnel connections for Edge clusters.
+TunnelServer provides reverse tunnel connections for Edge clusters.
 
 **Workflow:**
 
@@ -147,51 +126,70 @@ TunnelServer is based on [remotedialer](https://github.com/rancher/remotedialer)
    Manager ────API Request────► Tunnel ────► Agent ────► Local API Server
 ```
 
-**Authentication:**
+### 7. Agent
 
-```go
-// Edge cluster uses Bootstrap Token for initial authentication
-// Headers when Agent connects
-headers := http.Header{}
-headers.Set("Authorization", "Bearer "+bootstrapToken)
-headers.Set("X-Kumquat-Cluster-Name", clusterName)
-headers.Set("X-Remotedialer-ID", clusterName)
-```
+Agent runs in Edge clusters and actively connects back to the Hub-side Manager.
 
-### 5. StatusReconciler
+**Key Responsibilities:**
+- Establish and maintain the tunnel connection to Manager
+- Report cluster heartbeat and basic status
+- Receive control-plane requests forwarded through the tunnel
+- Avoid exposing the Edge cluster Kubernetes API for inbound access
+
+### 8. Addon Manager
+
+Addon Manager installs and coordinates optional multi-cluster capabilities.
+
+**Built-in Capabilities:**
+- MCS/Submariner cross-cluster service discovery and networking
+- Kruise Rollout progressive delivery coordination
+- VictoriaMetrics multi-cluster monitoring integration
+- Custom Addon extension points
+
+### 9. StatusReconciler
 
 StatusReconciler collects workload status from member clusters and aggregates updates to the Application CR.
 
 **Aggregation Logic:**
+- Collect workload status from each target cluster
+- Calculate global replicas and ready replicas
+- Set the application health phase
+- Preserve per-cluster status and messages for troubleshooting
 
-```go
-// Collect Deployment status from each cluster
-for _, cluster := range targetClusters {
-    client := clientManager.GetClient(cluster)
-    
-    deployment := &appsv1.Deployment{}
-    client.Get(ctx, key, deployment)
-    
-    clusterStatuses = append(clusterStatuses, ClusterStatus{
-        Cluster:     cluster,
-        Ready:       deployment.Status.ReadyReplicas,
-        Available:   deployment.Status.AvailableReplicas,
-        Conditions:  deployment.Status.Conditions,
-    })
-}
+**Health Phases:**
 
-// Aggregate health phase
-app.Status.HealthPhase = calculateHealthPhase(clusterStatuses)
-// Healthy: all clusters healthy
-// Progressing: updates in progress
-// Degraded: some clusters unhealthy
-```
+| Phase | Description |
+|-------|-------------|
+| Healthy | Workloads in all clusters are running normally |
+| Progressing | Workloads are being updated |
+| Degraded | Workloads in one or more clusters are unhealthy |
 
 ## Data Flow
 
 ### Application Creation Flow
 
 ![Application Data Flow](../images/application_flow.drawio.png)
+
+1. A user creates an application through `kumctl` or the Kumquat API.
+2. The API handles authentication, authorization, idempotency, and resource conversion.
+3. Engine observes the desired state and schedules the application.
+4. Dispatcher applies native workloads to the selected member clusters.
+5. StatusReconciler collects member-cluster results and updates application status.
+
+### Status Sync Flow
+
+![Status Sync Flow](../images/status_sync_flow.drawio.png)
+
+## Connection Mode Comparison
+
+| Capability | Hub Mode | Edge Mode |
+|------------|----------|-----------|
+| **Connection direction** | Manager -> cluster | Agent -> Manager |
+| **Network requirement** | Member cluster API Server is reachable from the Hub | Agent can reach Manager |
+| **Best fit** | Clusters connected through the same VPC or VPN | Clusters behind NAT or firewall |
+| **Authentication** | kubeconfig or ServiceAccount Token | Bootstrap Token or ServiceAccount Token |
+| **Agent required** | No | Yes |
+| **Latency** | Low | Slightly higher because requests traverse the tunnel |
 
 ## High Availability
 
@@ -201,47 +199,15 @@ app.Status.HealthPhase = calculateHealthPhase(clusterStatuses)
 - Uses Leader Election to ensure only one active instance
 - Client caching and connection pool management
 
-```yaml
-# ../charts/manager/templates/deployment.yaml
-spec:
-  replicas: 2
-  template:
-    spec:
-      containers:
-      - name: manager
-        args:
-        - --leader-elect=true
-```
-
 ### Agent HA
 
 - Supports automatic reconnection with exponential backoff
 - Automatic connection rebuild on heartbeat timeout
 - Local workloads unaffected by Tunnel disconnection
 
-```go
-func (a *Agent) Run() error {
-    backoff := wait.Backoff{
-        Steps:    math.MaxInt32,
-        Duration: time.Second,
-        Factor:   2.0,
-        Cap:      5 * time.Minute,
-    }
-    
-    return wait.ExponentialBackoff(backoff, func() (bool, error) {
-        err := a.connectTunnel()
-        if err != nil {
-            log.Error(err, "tunnel connection failed, retrying...")
-            return false, nil  // Continue retry
-        }
-        return true, nil
-    })
-}
-```
-
 ## Related Documentation
 
 - [Scheduler Design](scheduler.md) - Detailed scheduler architecture and plugin mechanism
 - [Topology Spread Guide](topology_spread.md) - Cross-region/zone workload distribution
-- [Edge Cluster Management](edge.md) - Detailed tunnel implementation
+- [Edge Cluster Management](edge.md) - Edge cluster operations and connection model
 - [API Reference](api.md) - CRD specifications and examples

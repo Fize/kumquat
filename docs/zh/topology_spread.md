@@ -1,6 +1,6 @@
 # 拓扑分布指南
 
-[English](topology_spread.md)
+[English](../en/topology_spread.md)
 
 ## 概述
 

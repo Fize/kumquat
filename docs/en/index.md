@@ -1,42 +1,45 @@
-# Kumquat Engine Documentation
+# Kumquat Documentation
 
-[中文文档](../zh/index.md)
+[中文](../zh/index.md)
 
-Welcome to the Kumquat Engine multi-cluster application management platform documentation.
+Welcome to the Kumquat multi-cluster application management platform documentation.
 
 ## Documentation Index
 
 | Document | Description | Audience |
 |----------|-------------|----------|
-| [Architecture](architecture.md) | System architecture, core components, data flow | Developers, Architects |
+| [Architecture](architecture.md) | Responsibility boundaries across user entry points, API, Engine, and member clusters | Developers, Architects |
 | [Scheduler Design](scheduler.md) | Multi-cluster scheduling framework, plugin mechanism | Developers |
+| [Addon Design](addon.md) | Addon mechanism, Submariner integration, custom Addon development | Developers, Architects |
 | [Topology Spread](topology_spread.md) | Cross-region workload distribution plugin | Developers, Operators |
 | [Edge Cluster](edge.md) | Tunnel connection, Bootstrap Token, Agent deployment | Operators, Developers |
 | [API Reference](api.md) | CRD specifications, field descriptions, examples | All Users |
 
 ## Quick Navigation
 
-### 🚀 Getting Started
+### Getting Started
 
-If you're new to Kumquat Engine, we recommend reading in this order:
+If you're new to Kumquat, we recommend reading in this order:
 
-1. **[Architecture](architecture.md)** - Understand Kumquat Engine's design philosophy and components
+1. **[Architecture](architecture.md)** - Understand Kumquat's design philosophy and components
 2. **[API Reference](api.md)** - Learn how to define Application and ManagedCluster
 3. **[Edge Cluster](edge.md)** - Understand how to onboard edge clusters (if needed)
 
-### 🔧 Deep Dive
+### Deep Dive
 
-For understanding Kumquat Engine's implementation details:
+For a deeper understanding of Kumquat's key mechanisms:
 
 1. **[Scheduler Design](scheduler.md)** - Understand the core multi-cluster scheduling algorithms
-2. **[Topology Spread](topology_spread.md)** - Learn cross-region high availability deployment
+2. **[Addon Design](addon.md)** - Learn the Addon mechanism and Submariner integration
+3. **[Topology Spread](topology_spread.md)** - Learn cross-region high availability deployment
 
-### 📋 Common Scenarios
+### Common Scenarios
 
 | Scenario | Recommended Document |
 |----------|---------------------|
 | Deploy first cross-cluster application | [API Reference - Application](api.md#application) |
 | Register a new member cluster | [API Reference - ManagedCluster](api.md#managedcluster) |
+| Manage resources from the command line | [kumctl](../../kumctl/README_en.md) |
 | Onboard edge cluster behind NAT | [Edge Cluster](edge.md) |
 | Configure cross-region HA | [Topology Spread](topology_spread.md) |
 | Understand scheduling decisions | [Scheduler Design](scheduler.md) |
@@ -45,10 +48,9 @@ For understanding Kumquat Engine's implementation details:
 
 ## Project Links
 
-- [GitHub Repository](https://github.com/fize/kumquat/engine)
-- [Issue Tracker](https://github.com/fize/kumquat/engine/issues)
-- [Contributing Guide](https://github.com/fize/kumquat/engine/blob/main/CONTRIBUTING.md)
+- [GitHub Repository](https://github.com/fize/kumquat)
+- [Issue Tracker](https://github.com/fize/kumquat/issues)
 
 ## Contributing to Documentation
 
-Found an error or want to add content? PRs are welcome! Documentation is written in Markdown format and located in the `doc/` directory.
+Found an error or want to add content? PRs are welcome! Documentation is written in Markdown format and located in the `docs/` directory.

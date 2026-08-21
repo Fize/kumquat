@@ -29,8 +29,8 @@ Integrate KubeVPN into Kumquat to provide developers with an out-of-the-box solu
 ```
 integrations/
 └── kubevpn/
-    ├── README.md              # Usage documentation
-    ├── README_zh.md           # Chinese documentation
+    ├── README.md              # 中文使用文档
+    ├── README_en.md           # English documentation
     ├── TODO.md                # This file
     ├── charts/
     │   └── values.yaml        # Pre-configured Helm values
@@ -52,7 +52,7 @@ integrations/
 - [ ] Create directory structure
 - [ ] Write Helm values configuration (`charts/values.yaml`)
 - [ ] Write install/uninstall scripts (`scripts/install.sh`, `scripts/uninstall.sh`)
-- [ ] Write documentation (`README.md`, `README_zh.md`)
+- [ ] Write documentation (`README.md`, `README_en.md`)
 - [ ] Write kumctl integration design (`kumctl/connect.go`)
 
 ### Phase 2: kumctl Integration

@@ -1,6 +1,6 @@
 # Edge 集群管理
 
-[English](edge.md)
+[English](../en/edge.md)
 
 ## 概述
 
